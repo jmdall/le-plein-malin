@@ -5,7 +5,7 @@
 // `syncedAt` retourné permet d'afficher « données en cache (date) ».
 import type { Db } from '../db/client'
 import { prices, stations } from '../db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, desc as drizzleDesc } from 'drizzle-orm'
 import type { FuelType, StationPrice } from '../../domain/fuel-prices/types'
 import { haversineKm } from '../../domain/fuel-prices/haversine'
 import type {
@@ -50,7 +50,7 @@ export function createCacheProvider(
             eq(stations.closed, false)
           )
         )
-        .orderBy(stations.syncedAt)
+        .orderBy(drizzleDesc(stations.syncedAt))
         .get()
 
       const lastSynced = latestRow ? latestRow.syncedAt : undefined

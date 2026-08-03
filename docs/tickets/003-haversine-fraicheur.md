@@ -1,7 +1,7 @@
 ---
 id: 003
 titre: Haversine pure + fraîcheur dans domain/fuel-prices (TDD)
-statut: ready-for-agent
+statut: done
 dependances:
   - "002"
 priorite: P0

@@ -120,9 +120,17 @@ export function calculateFuelRecommendation(input: FuelRecommendationInput): Fue
       return a.c.station.id.localeCompare(b.c.station.id)
     })
 
+  // Formulation probabiliste de la tendance RÉELLE (spec §5.6 REC-4, §9) :
+  // jamais « stable » codé en dur — la direction calculée par domain/trend
+  // (005) est reflétée (C1 revue /code-review).
+  const TREND_PHRASES: Record<string, string> = {
+    down: 'Tendance probable à la baisse : selon les données récentes.',
+    stable: 'Tendance probable stable : selon les données récentes.',
+    up: 'Tendance probable à la hausse : selon les données récentes.'
+  }
   const reasonsBase = trendInsufficient
     ? ['Historique insuffisant : tendance probable non calculable, décision sur les prix courants.']
-    : ['Tendance probable stable : selon les données récentes.']
+    : [TREND_PHRASES[input.trend?.direction ?? 'stable'] ?? TREND_PHRASES.stable!]
 
   const assumptions = withoutGeo
     ? ['Détour estimé en ligne droite, aller-retour, relatif à la station la plus proche (absence de géolocalisation).']
@@ -230,28 +238,31 @@ export function calculateFuelRecommendation(input: FuelRecommendationInput): Fue
     const diffPerLiter = reference.price - bestCandidate.c.station.price
     const minQuantity = diffPerLiter > 0 ? Math.ceil((input.threshold + bestCandidate.detourCost) / diffPerLiter) : Number.POSITIVE_INFINITY
     const maxAllowed = Math.min(available, input.vehicle.preferredQuantity ?? Infinity)
-    const X = Math.min(maxAllowed, minQuantity)
+    const recommendedQuantity = Math.min(maxAllowed, minQuantity)
 
-    if (diffPerLiter > 0 && X > 0 && minQuantity <= maxAllowed) {
+    if (diffPerLiter > 0 && recommendedQuantity > 0 && minQuantity <= maxAllowed) {
       return {
         type: 'partial-fill',
         confidence: hasStale ? 0.7 : 0.9,
-        quantityToBuy: X,
+        quantityToBuy: recommendedQuantity,
         recommendedStation: bestCandidate.c.station,
         referenceStation: reference,
         detourCost: bestCandidate.detourCost,
-        grossSavings: diffPerLiter * X,
-        netSavings: diffPerLiter * X - bestCandidate.detourCost,
+        grossSavings: diffPerLiter * recommendedQuantity,
+        netSavings: diffPerLiter * recommendedQuantity - bestCandidate.detourCost,
         reasons: ['Le plein complet ne rentabilise pas le détour, mais un plein partiel suffit.', ...reasonsBase],
         usedData: ['Prix officiels les plus récents pour ce carburant.'],
         ignoredData: ignored,
         calculations: [
           `Quantité minimale rentabilisant le détour = ⌈(${input.threshold} + ${bestCandidate.detourCost}) / ${diffPerLiter}⌉ = ${minQuantity} L.`,
-          `Quantité recommandée = min(${minQuantity}, ${maxAllowed}) = ${X} L.`
+          `Quantité recommandée = min(${minQuantity}, ${maxAllowed}) = ${recommendedQuantity} L.`
         ],
         assumptions,
         freshness,
-        isPartial: true
+        // « Mets seulement X litres » est une recommandation COMPLÈTE (C3
+        // revue) : isPartial reflète uniquement les données manquantes
+        // (tendance insuffisante, sans géoloc, données incohérentes…).
+        isPartial
       }
     }
   }

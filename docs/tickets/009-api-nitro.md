@@ -1,7 +1,7 @@
 ---
 id: 009
 titre: API REST Nitro (stations, recommendation, détail, historique, health)
-statut: ready-for-agent
+statut: done
 dependances:
   - "003"
   - "004"

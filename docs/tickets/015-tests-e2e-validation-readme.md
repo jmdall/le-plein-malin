@@ -1,7 +1,7 @@
 ---
 id: 015
 titre: Tests e2e Playwright (parcours principal + validation finale + README)
-statut: ready-for-agent
+statut: done
 dependances:
   - "010"
   - "011"

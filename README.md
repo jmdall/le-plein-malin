@@ -1,75 +1,171 @@
-# Nuxt Minimal Starter
+# ⛽ Je fais le plein ou non ?
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+Application web **mobile-first** qui aide un automobiliste en France à décider,
+avec une recommandation **explicable** et fondée sur les **prix officiels** :
 
-## Setup
+- **faire le plein maintenant** ;
+- **mettre seulement X litres** ;
+- **attendre** ;
+- **aller dans une autre station moins chère**.
 
-Make sure to install dependencies:
+Aucun prix n'est inventé : toutes les données proviennent de la source
+officielle DGCCRF (ou du cache local, signalé comme tel).
+
+## Fonctionnalités
+
+- Géolocalisation avec consentement, recherche par ville ou code postal, rayon
+  5 / 10 / 20 / 30 km, utilisation sans géolocalisation.
+- Carburants : SP95, SP95-E10, SP98, E85, Gazole, GPLc (préférence mémorisée).
+- Liste des stations : prix, distance, fraîcheur (badges 24 h / 48 h), économie
+  brute, coût du détour, économie nette, favoris, itinéraire OSM.
+- Carte OpenStreetMap (Leaflet, tuiles libres, aucun service payant).
+- Profil véhicule : consommation, capacité, niveau, quantité souhaitée, seuil
+  d'économie (défaut 1 €) — stocké en base, sans compte utilisateur.
+- Tendance locale déterministe (min / moyenne / médiane, Δ24 h / Δ7 j),
+  toujours formulée « tendance probable », jamais une certitude.
+- PWA installable : shell hors-ligne explicite, **aucun prix périmé hors-ligne**.
+- Mode sombre, navigation clavier, contrastes AA, mobile-first.
+
+## Stack
+
+Nuxt 3 · Vue 3 · TypeScript strict · Nitro · SQLite (Drizzle ORM) · Zod ·
+Vitest · Playwright · ESLint · Docker · PWA · Leaflet/OSM.
+
+## Prérequis
+
+- Node.js ≥ 20 (testé avec Node 22) et npm.
+- (Optionnel) Docker pour le lancement conteneurisé.
+- (Optionnel) une clé API DeepSeek **uniquement** pour utiliser OpenCode avec
+  le modèle imposé (pas nécessaire pour faire tourner l'application).
+
+## Installation
 
 ```bash
-# npm
 npm install
-
-# pnpm
-pnpm install
-
-# yarn
-yarn install
-
-# bun
-bun install
+cp .env.example .env
 ```
 
-## Development Server
+### Configuration DeepSeek pour OpenCode (développement assisté)
 
-Start the development server on `http://localhost:3000`:
+Le dépôt impose un modèle unique pour OpenCode : **DeepSeek V4 Flash via l'API
+officielle DeepSeek** (`https://api.deepseek.com/v1`). La configuration est
+dans `opencode.json` (provider `deepseek`, modèle `deepseek/deepseek-v4-flash`).
 
 ```bash
-# npm
-npm run dev
-
-# pnpm
-pnpm dev
-
-# yarn
-yarn dev
-
-# bun
-bun run dev
+export DEEPSEEK_API_KEY=sk-...            # ou dans .env
+opencode --model deepseek/deepseek-v4-flash
 ```
 
-## Production
+Ne pas utiliser OpenRouter, OpenCode Zen/Go, un modèle automatique, de modèle
+de secours, ni un autre modèle (Claude, GPT, Gemini, Codex).
 
-Build the application for production:
+## Lancement local
 
 ```bash
-# npm
-npm run build
-
-# pnpm
-pnpm build
-
-# yarn
-yarn build
-
-# bun
-bun run build
+npm run dev        # http://localhost:3000
 ```
 
-Locally preview production build:
+La base SQLite est créée et migrée automatiquement au premier accès
+(`./data/app.db`, git-ignoré). Le job de synchronisation des prix tourne
+toutes les 2 h par défaut (`SYNC_INTERVAL_HOURS`).
+
+## Lancement Docker
 
 ```bash
-# npm
-npm run preview
-
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
+docker compose up --build
+# http://localhost:3000 — base SQLite dans le volume sqlite-data
 ```
 
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+## Tests
+
+```bash
+npm run lint
+npm run typecheck
+npm run test          # unitaires + intégration (Vitest)
+npm run test:e2e      # end-to-end (Playwright, port 3100)
+npm run build         # build de production Nitro
+```
+
+Sur Raspberry Pi (arm64 / Debian 11), Playwright utilise le chromium système
+(`/usr/bin/chromium`) ; la suite e2e tourne avec 1 worker et des timeouts
+élargis (`playwright.config.ts`).
+
+## Variables d'environnement
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `NITRO_PORT` | `3000` | Port HTTP |
+| `NITRO_HOST` | `localhost` | Hôte d'écoute (`0.0.0.0` en Docker) |
+| `DATABASE_PATH` | `./data/app.db` | Fichier SQLite |
+| `SYNC_INTERVAL_HOURS` | `2` | Fréquence du job de synchronisation |
+| `FUEL_PRICES_PROVIDER` | `opendatasoft` | Fournisseur principal des prix |
+| `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` | — | OpenCode uniquement (dev) |
+
+## Source des données
+
+**« Prix des carburants en France – Flux quotidien » (DGCCRF, Ministères
+économiques et financiers)** — licence ouverte `fr-lo`. Détails vérifiés et
+documentés dans `docs/research/fuel-data-source.md` :
+
+- API : `https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/prix-carburants-quotidien/records`
+  (état courant, 73 493 enregistrements, champs `prix_nom`, `prix_valeur`,
+  `prix_maj`, `geom`…).
+- Repli automatique : export JSON complet → fichier quotidien XML
+  `donnees.roulez-eco.fr/opendata/jour` → cache SQLite.
+- Le domaine métier ne dépend jamais du format gouvernemental : abstraction
+  `FuelPriceProvider` (ADR-0003).
+
+## Synchronisation des prix
+
+Le job Nitro (`server/jobs/syncPrices.ts`) synchronise périodiquement :
+upsert des stations et prix (transaction unique), snapshot quotidien dans
+`price_history` (alimente la tendance), neutralisation des prix > 48 h hors
+recommandations (toujours visibles avec badge), tolérance à l'échec partiel.
+`GET /api/health` expose `lastSync`.
+
+## Algorithme de recommandation
+
+Module métier **pur** `calculateFuelRecommendation` (`domain/recommendation/`,
+TDD, 18 scénarios du cahier des charges) — aucune dépendance Nuxt/HTTP/SQLite :
+
+```
+coût du détour  = distance supplémentaire A/R × conso / 100 × prix candidat
+économie brute  = (prix référence − prix candidat) × quantité
+économie nette  = économie brute − coût du détour
+aller à une autre station  ⇔  économie nette ≥ seuil (défaut 1 €)
+```
+
+Le serveur calcule les distances (haversine pure), choisit la station de
+référence (la plus proche) et injecte des kilomètres déjà calculés ; la
+tendance (`domain/trend/`) est déterministe (moyenne, médiane, variations,
+pondération par ancienneté). Les formulations restent probabilistes
+(« tendance probable », « selon les données récentes »).
+
+## Limites du MVP
+
+- **Historique** : l'API officielle ne fournit que l'état courant ; la
+  tendance est construite sur l'historique local accumulé par l'app (quelques
+  jours suffisent).
+- **Enseigne** : non publiée dans le flux officiel — affichée « si disponible »
+  (souvent absente).
+- **Détour** : estimé en ligne droite (haversine) aller-retour, pas de routage
+  routier (aucun service payant) — hypothèse affichée à l'utilisateur.
+- **Géocodage** : Nominatim/OSM (gratuit, limité) avec cache SQLite.
+- **Favoris** : stockés localement (localStorage) ; la table serveur existe
+  pour une évolution multi-appareils.
+
+## Documentation
+
+- `docs/specs/spec.md` — spécification complète
+- `docs/specs/grill-decisions.md` — décisions bloquantes (D1–D6)
+- `docs/research/fuel-data-source.md` — source officielle vérifiée
+- `docs/adr/` — décisions d'architecture (0001–0004)
+- `docs/tickets/` — tickets (001–015)
+- `CONTEXT.md` — vocabulaire métier
+- `PLAN.md` — plan d'exécution
+
+## Licence des données
+
+Source : « Prix des carburants en France - Flux quotidien », DGCCRF /
+Ministères économiques et financiers, data.economie.gouv.fr, licence ouverte
+(`fr-lo`).

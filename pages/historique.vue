@@ -134,7 +134,7 @@ function scoreLabel(score: number): string {
           <dt>Variation 24 h</dt>
           <dd v-if="indicators.change24h !== null">
             {{ signLabel(indicators.change24h) }}{{ indicators.change24h.toFixed(3).replace('.', ',') }} €/L
-            <span class="muted">({{ signLabel(indicators.change24hPercent ?? 0) }}{{ formatPercent((indicators.change24hPercent ?? 0) / 100).replace(' %', ' %') }})</span>
+            <span class="muted">({{ signLabel(indicators.change24hPercent ?? 0) }}{{ formatPercent(indicators.change24hPercent ?? 0) }})</span>
           </dd>
           <dd v-else class="muted">indisponible</dd>
         </div>
@@ -142,7 +142,7 @@ function scoreLabel(score: number): string {
           <dt>Variation 7 jours</dt>
           <dd v-if="indicators.change7d !== null">
             {{ signLabel(indicators.change7d) }}{{ indicators.change7d.toFixed(3).replace('.', ',') }} €/L
-            <span class="muted">({{ signLabel(indicators.change7dPercent ?? 0) }}{{ formatPercent((indicators.change7dPercent ?? 0) / 100).replace(' %', ' %') }})</span>
+            <span class="muted">({{ signLabel(indicators.change7dPercent ?? 0) }}{{ formatPercent(indicators.change7dPercent ?? 0) }})</span>
           </dd>
           <dd v-else class="muted">indisponible</dd>
         </div>

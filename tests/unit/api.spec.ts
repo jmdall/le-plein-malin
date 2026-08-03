@@ -565,6 +565,37 @@ describe('API — orchestration (ticket 009, spec §8)', () => {
     }
   })
 
+  it('buildStationDetailResponse : station sans prix → price/fuel/updatedAt null (aucun prix inventé)', async () => {
+    const h = createTestDb()
+    try {
+      await seed(h)
+      // Station sans AUCUN prix en base.
+      await createStationsRepository(h.db).upsert({
+        id: 'noprice',
+        name: 'Station sans prix',
+        brand: null,
+        address: 'rue Z',
+        city: 'Paris',
+        postalCode: '75001',
+        latitude: 48.86,
+        longitude: 2.34,
+        departmentCode: null,
+        regionCode: null,
+        closed: false,
+        syncedAt: NOW
+      })
+
+      const res = await buildStationDetailResponse({ db: h.db, id: 'noprice' })
+      expect(res.station.id).toBe('noprice')
+      expect(res.station.price).toBeNull()
+      expect(res.station.fuel).toBeNull()
+      expect(res.station.updatedAt).toBeNull()
+      expect(res.prices).toEqual([])
+    } finally {
+      h.close()
+    }
+  })
+
   it('buildTrendResponse : indicateurs via le module pur (005) sur l’historique local', async () => {
     const h = createTestDb()
     try {

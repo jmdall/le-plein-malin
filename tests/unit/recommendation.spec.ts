@@ -235,6 +235,41 @@ describe('calculateFuelRecommendation (ticket 004, 18 scénarios §13)', () => {
     })
   })
 
+  describe('tendance réelle dans la formulation (REC-4, C1 revue /code-review)', () => {
+    it('trend down → « Tendance probable à la baisse », jamais « stable » en dur', () => {
+      const r = calculateFuelRecommendation(
+        makeInput({
+          vehicle: vehicle({ currentLevel: 30 }),
+          candidates: [candidate('egal', 1.95, 0)],
+          trend: { direction: 'down', magnitude: 0.04 }
+        })
+      )
+      expect(r.reasons.join(' ')).toMatch(/baisse/i)
+      expect(r.reasons.join(' ')).not.toMatch(/stable/)
+    })
+
+    it('trend up → « Tendance probable à la hausse »', () => {
+      const r = calculateFuelRecommendation(
+        makeInput({
+          vehicle: vehicle({ currentLevel: 30 }),
+          candidates: [candidate('egal', 1.95, 0)],
+          trend: { direction: 'up', magnitude: 0.04 }
+        })
+      )
+      expect(r.reasons.join(' ')).toMatch(/hausse/i)
+    })
+
+    it('sans signal → « Tendance probable stable » par défaut', () => {
+      const r = calculateFuelRecommendation(
+        makeInput({
+          vehicle: vehicle({ currentLevel: 30 }),
+          candidates: [candidate('egal', 1.95, 0)]
+        })
+      )
+      expect(r.reasons.join(' ')).toMatch(/stable/i)
+    })
+  })
+
   describe('#9 — réservoir presque plein', () => {
     it('niveau élevé sans besoin → wait, jamais fill-now', () => {
       const r = calculateFuelRecommendation(
@@ -365,7 +400,9 @@ describe('calculateFuelRecommendation (ticket 004, 18 scénarios §13)', () => {
       expect(r.type).toBe('partial-fill')
       expect(r.quantityToBuy).toBe(7)
       expect(r.recommendedStation?.id).toBe('loin')
-      expect(r.isPartial).toBe(true)
+      // « Mets seulement X litres » est une recommandation COMPLÈTE : isPartial
+      // n'est vrai que si une donnée manque (C3 revue /code-review).
+      expect(r.isPartial).toBe(false)
     })
 
     it('borné par capacité − niveau : si même le plein complet ne rentabilise pas → wait', () => {

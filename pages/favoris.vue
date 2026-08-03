@@ -9,12 +9,27 @@ import { useHead } from '#imports'
 import { useFavorites } from '../composables/useFavorites'
 import { buildDirectionsUrl } from '../utils/location'
 import { formatPrice, formatUpdatedAt } from '../utils/format'
-import type { RecommendationStation } from '../utils/recommendation'
 
 useHead({ title: 'Favoris — Je fais le plein ou non ?' })
 
+// Détail d'une station favorite (GET /api/stations/:id). Une station sans
+// prix en base renvoie price/fuel/updatedAt null (jamais un prix fabriqué) :
+// l'UI affiche « prix indisponible » dans ce cas.
+interface FavoriteStationDetail {
+  id: string
+  name: string
+  brand: string | null
+  address: string
+  city: string
+  postalCode: string
+  position: { lat: number; lon: number }
+  fuel: string | null
+  price: number | null
+  updatedAt: string | null
+}
+
 const favorites = useFavorites()
-const stations = ref<RecommendationStation[]>([])
+const stations = ref<FavoriteStationDetail[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -28,12 +43,12 @@ onMounted(async () => {
     ids.value.map(async (id) => {
       const res = await fetch(`/api/stations/${encodeURIComponent(id)}`)
       if (!res.ok) throw new Error(`Station ${id} indisponible`)
-      const body = (await res.json()) as { station: RecommendationStation }
+      const body = (await res.json()) as { station: FavoriteStationDetail }
       return body.station
     })
   )
   stations.value = results
-    .filter((r): r is PromiseFulfilledResult<RecommendationStation> => r.status === 'fulfilled')
+    .filter((r): r is PromiseFulfilledResult<FavoriteStationDetail> => r.status === 'fulfilled')
     .map((r) => r.value)
   const failed = results.filter((r) => r.status === 'rejected').length
   if (failed > 0) {
@@ -80,10 +95,14 @@ function clearAll() {
             <span v-if="station.brand" class="favorite-brand">— {{ station.brand }}</span>
           </p>
           <p class="favorite-meta">
-            {{ station.address }}, {{ station.postalCode }} {{ station.city }} ·
-            {{ station.fuel }} · {{ formatPrice(station.price) }}
+            {{ station.address }}, {{ station.postalCode }} {{ station.city }}
+            <template v-if="station.fuel"> · {{ station.fuel }}</template>
+            <template v-if="station.price !== null"> · {{ formatPrice(station.price) }}</template>
+            <template v-else> · <span class="muted">prix indisponible</span></template>
           </p>
-          <p class="favorite-updated">Mis à jour le {{ formatUpdatedAt(new Date(station.updatedAt)) }}</p>
+          <p v-if="station.updatedAt" class="favorite-updated">
+            Mis à jour le {{ formatUpdatedAt(new Date(station.updatedAt)) }}
+          </p>
         </div>
         <div class="favorite-actions">
           <a

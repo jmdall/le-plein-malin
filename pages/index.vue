@@ -6,13 +6,14 @@
 // immédiat de la recommandation fournie par l'API (009) — l'UI ne recalculera
 // jamais les règles (REC-2/D1). États : chargement, erreur, données
 // insuffisantes, fraîcheur > 24 h atténuée.
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useHead } from '#imports'
 import { FUEL_OPTIONS } from '../utils/fuel'
 import { usePreferences, RADIUS_OPTIONS } from '../composables/usePreferences'
 import { useGeolocation } from '../composables/useGeolocation'
 import { useFuelRecommendation } from '../composables/useFuelRecommendation'
 import { useStations } from '../composables/useStations'
+import { saveLocation } from '../utils/location'
 import type { RecommendationRequest } from '../utils/recommendation'
 import type { StationsRequest } from '../utils/stations'
 
@@ -91,9 +92,20 @@ function searchByQuery(q: string) {
     payload.q = raw
   }
   geo.setSavedQuery({ source: isPostal ? 'postalCode' : 'city', q: raw })
+  saveLocation({ source: isPostal ? 'postalCode' : 'city', q: raw })
   searchMessage.value = null
   run(payload, raw, 'query')
 }
+
+// ——— Rejeu de la dernière recherche ville/CP au retour sur la page (spec §14 :
+// « afficher immédiatement » — la dernière recherche n'est jamais perdue). La
+// position précise (géoloc) n'est jamais persistée (LOC-4). ———
+onMounted(() => {
+  const saved = geo.savedQuery.value
+  if (saved && saved.q) {
+    searchByQuery(saved.q)
+  }
+})
 
 function acceptGeo() {
   locate()

@@ -226,15 +226,14 @@ export async function buildStationsResponse(options: {
 // en mode géolocalisé, il l'est aussi (spec §4, ADR-0002). La référence est
 // marquée isReference et n'a jamais d'économie (elle est le point de
 // comparaison). Le quantity par défaut vient du profil véhicule si fourni.
-export function buildStationsList(options: {
+export async function buildStationsList(options: {
   provider: FuelPriceProvider
   query: StationsQuery
   center: ResolvedCenter
   vehicle?: { consumption: number; currentLevel: number; tankCapacity: number }
   now?: () => Date
 }): Promise<StationsListResponse> {
-  return (async () => {
-    const { provider, query, center } = options
+  const { provider, query, center } = options
     const now = options.now?.() ?? new Date()
     const vehicle = options.vehicle
     const quantity =
@@ -299,7 +298,6 @@ export function buildStationsList(options: {
         fuel: query.fuel
       }
     }
-  })()
 }
 
 // ——— Construction de FuelRecommendationInput (injection, spec §10.2/10.4) ———
@@ -447,8 +445,15 @@ export async function buildRecommendationResponse(options: {
 }
 
 // ——— Réponse /api/stations/:id (détail) ———
+// Une station sans aucun prix en base n'a PAS de prix fabriqué : les champs
+// price/fuel/updatedAt du station sont null (le client affiche « prix
+// indisponible »). Invariant CONTEXT.md : aucun prix n'est inventé.
 export interface StationDetailResponse {
-  station: StationPrice
+  station: Omit<StationPrice, 'price' | 'fuel' | 'updatedAt'> & {
+    price: number | null
+    fuel: FuelType | null
+    updatedAt: Date | null
+  }
   prices: Array<{ fuel: FuelType; price: number; updatedAt: Date; rupture: boolean }>
 }
 
@@ -473,6 +478,7 @@ export async function buildStationDetailResponse(options: {
     rupture: r.rupture
   }))
 
+  const first = fuelPrices[0]
   return {
     station: {
       id: station.id,
@@ -482,9 +488,10 @@ export async function buildStationDetailResponse(options: {
       city: station.city,
       postalCode: station.postalCode,
       position: { lat: station.latitude, lon: station.longitude },
-      fuel: (fuelPrices[0]?.fuel ?? 'Gazole') as FuelType,
-      price: fuelPrices[0]?.price ?? 0,
-      updatedAt: fuelPrices[0]?.updatedAt ?? station.syncedAt
+      // Aucun prix en base → null, jamais 0 ni un carburant par défaut.
+      fuel: first?.fuel ?? null,
+      price: first?.price ?? null,
+      updatedAt: first?.updatedAt ?? null
     },
     prices: fuelPrices
   }
