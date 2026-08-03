@@ -22,6 +22,14 @@ const OBSOLETE_LIMIT_MS = 48 * 3_600_000
 const STABLE_THRESHOLD = 0.005
 
 export function calculateTrendIndicators(input: TrendInput): TrendIndicators {
+  // Invariant CONTEXT.md « aucun prix n'est inventé » : un historique vide ne
+  // peut pas produire d'indicateurs (min/moyenne/médiane/prix courant). On
+  // lève une erreur explicite plutôt que de fabriquer 0/NaN (C4 revue). Les
+  // appelants décident du repli (« tendance insuffisante ») AVANT l'appel.
+  if (input.snapshots.length === 0) {
+    throw new Error('Tendance : historique vide — indicateurs non calculables (aucun prix inventé)')
+  }
+
   // Tri chronologique par jour : le module est déterministe et indépendant de
   // l'ordre de l'historique reçu (TRE-3).
   const snapshots = [...input.snapshots].sort(
@@ -34,7 +42,8 @@ export function calculateTrendIndicators(input: TrendInput): TrendIndicators {
   const minPrice = sorted[0] as number
   const averagePrice = prices.reduce((sum, p) => sum + p, 0) / n
   const medianPrice = median(sorted)
-  const currentPrice = snapshots[snapshots.length - 1]?.price ?? 0
+  // snapshots non vide garanti par la garde ci-dessus (C4 revue) : jamais 0.
+  const currentPrice = snapshots[snapshots.length - 1]!.price
   const deviationFromMedian = currentPrice - medianPrice
 
   const change24h = variationAt(snapshots, WINDOW_24H_MS)

@@ -177,6 +177,17 @@ describe('calculateTrendIndicators — variations et tendance', () => {
     expect(out.trend.magnitude).toBe(0)
   })
 
+  it('historique vide → erreur explicite, JAMAIS un prix 0/NaN fabriqué (C4 revue)', () => {
+    expect(() =>
+      calculateTrendIndicators({
+        stationId: 's-empty',
+        fuel: 'Gazole',
+        now: new Date('2026-08-03T12:00:00Z'),
+        snapshots: []
+      })
+    ).toThrow(/historique vide/i)
+  })
+
   it('pondération par ancienneté : une variation récente domine l’historique', () => {
     // Historique plat, puis hausse de 0,06 €/L sur le dernier jour.
     const input = snapshots('s11', 'Gazole', [

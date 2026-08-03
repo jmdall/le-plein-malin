@@ -234,11 +234,15 @@ recommandation autre station ⇔ économie nette ≥ seuil utilisateur (défaut 
   certitude.
 - [REC-5] Logique de décision (déterministe, à détailler en tickets) :
   1. Pas de données fraîches ni de prix → `insufficient-data`.
-  2. Réservoir critique (quasi vide) → tendre vers `fill-now` sauf forte
-     probabilité de baisse.
+  2. Réservoir critique (quasi vide) → `fill-now` **même en tendance
+     baissière** : le cahier des charges §13 #8 fait foi (« biais vers
+     fill-now même si tendance baissière ») — la spec antérieure « sauf forte
+     probabilité de baisse » est résolue en faveur du cahier des charges.
   3. Réservoir quasi plein → `wait` ou `partial-fill` selon le contexte.
   4. Tendance baissière + réservoir suffisant → `wait` (avec caveat « tendance
-     probable »).
+     probable »). En pratique le module n'émet `fill-now` que si le niveau est
+     critique ; hors urgence, la tendance baissière ne déclenche jamais
+     `fill-now` (la sortie par défaut est `wait`/`partial-fill`).
   5. Une candidate vérifie `économie nette ≥ seuil` → `go-to-station`
      (`recommendedStation` = celle au meilleur `économie nette`).
   6. Sinon → `fill-now` ou `partial-fill` selon la quantité et le niveau.
