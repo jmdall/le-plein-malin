@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hors ligne — Je fais le plein ou non ?</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #cbd5e1;
+      --accent: #00a86b;
+      --accent-contrast: #ffffff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --text: #e2e8f0;
+        --text-muted: #94a3b8;
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --border: #334155;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    main {
+      max-width: 36rem;
+      margin: 0 auto;
+      padding: 2rem 1rem;
+      display: grid;
+      gap: 1rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1.2rem;
+      display: grid;
+      gap: 0.6rem;
+    }
+    h1 { margin: 0; font-size: 1.4rem; }
+    p { margin: 0; }
+    .muted { color: var(--text-muted); }
+    ul { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.3rem; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Vous êtes hors ligne</h1>
+    <div class="card">
+      <p>
+        L’application s’affiche, mais <strong>aucun prix n’est disponible
+        hors-ligne</strong> : les prix viennent toujours du serveur et ne sont
+        jamais servis périmés.
+      </p>
+      <p class="muted">
+        Le profil et les favoris restent enregistrés sur cet appareil et seront
+        de nouveau utilisables dès que la connexion revient.
+      </p>
+    </div>
+    <div class="card">
+      <p class="muted">Une fois connecté, vous pouvez :</p>
+      <ul>
+        <li>revenir à la recommandation depuis l’accueil ;</li>
+        <li>modifier le profil du véhicule ;</li>
+        <li>consulter les favoris et l’historique.</li>
+      </ul>
+    </div>
+    <p class="muted">
+      Rechargez la page lorsque la connexion est rétablie.
+    </p>
+  </main>
+</body>
+</html>

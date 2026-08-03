@@ -2,10 +2,12 @@
 // app.vue — Layout global (ticket 013). Navigation accessible (skip-link,
 // NFR-ACC-1), header avec liens vers l'accueil / profil / favoris / historique,
 // sélecteur de thème clair/sombre (010) visible sur toutes les pages.
+// VitePwaManifest injecte le <link rel="manifest"> PWA (ticket 014).
 </script>
 
 <template>
   <div class="app-shell">
+    <VitePwaManifest />
     <a class="skip-link" href="#main">Aller au contenu principal</a>
 
     <header class="app-header">

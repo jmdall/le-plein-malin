@@ -19,8 +19,10 @@ export default defineConfig({
     trace: 'on-first-retry',
     // Raspberry Pi : le chargement SSR + hydratation + leaflet est lent quand
     // toute la suite tourne ; les timeouts par défaut (5s) sont insuffisants.
+    // La première navigation d'une route compile à froid côté Vite/Nitro (peut
+    // dépasser 30 s au démarrage du serveur).
     actionTimeout: 20_000,
-    navigationTimeout: 30_000
+    navigationTimeout: 90_000
   },
   expect: {
     timeout: 20_000
