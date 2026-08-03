@@ -1,0 +1,36 @@
+# « Je fais le plein ou non ? » — orchestration Docker
+#
+# Usage :
+#   docker compose up --build
+#
+# Le service `app` sert l'app Nuxt/Nitro (build de production) et monte un
+# volume Docker pour la base SQLite, de sorte que les données survivent aux
+# redémarrages de conteneur. Les variables d'environnement proviennent du
+# fichier `.env` (cf. .env.example) ; aucun secret n'est committé.
+#
+# Volume SQLite :
+#   - hôte : ./docker-data/db  →  conteneur : /app/data
+#   - la base est stockée hors du dépôt (docker-data/ est git-ignoré).
+
+name: je-fais-le-plein-ou-non
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: je-fais-le-plein-ou-non:latest
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      NITRO_HOST: 0.0.0.0
+      NITRO_PORT: 3000
+      DATABASE_PATH: /app/data/app.db
+    volumes:
+      - sqlite-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  sqlite-data:
