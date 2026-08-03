@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
 
+// Port libre sur cette machine : 3000 est occupé par un autre service (le
+// jeu d'outils du système). On utilise 3100 pour le serveur e2e.
+const PORT = process.env.E2E_PORT ?? '3100'
+
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
@@ -7,7 +11,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: `http://localhost:${PORT}`,
     trace: 'on-first-retry'
   },
   projects: [
@@ -24,8 +28,8 @@ export default defineConfig({
     }
   ],
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
+    command: `PORT=${PORT} npm run dev`,
+    url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000
   }

@@ -1,7 +1,7 @@
 ---
 id: 010
-titre: Page accueil + recommandation + panneau « Voir le calcul »
-statut: ready-for-agent
+titre: Page accueil + recommandation + « Voir le calcul »
+statut: done
 dependances:
   - "009"
 priorite: P1
