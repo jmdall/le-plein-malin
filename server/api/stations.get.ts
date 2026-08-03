@@ -12,9 +12,10 @@ import { createRoulezEcoProvider } from '../providers/roulezoeco'
 import { createCacheProvider } from '../providers/cacheProvider'
 import { createGeocodeProvider } from '../lib/geocode'
 import {
-  buildStationsResponse,
+  buildStationsList,
   createApiError,
   isApiError,
+  loadDefaultVehicleProfile,
   resolveCenter
 } from '../lib/orchestration'
 
@@ -46,11 +47,28 @@ export default defineEventHandler(async (event) => {
     const geocode = createGeocodeProvider(db)
     const center = await resolveCenter({ query: parsed.data, geocode })
 
-    // 4. Orchestration : haversine + station de référence (spec §8).
-    const response = await buildStationsResponse({
+    // 4. Profil véhicule par défaut en base (pour la quantité d'économie
+    //    brute/nette affichée en liste, spec §5.5). VEH-4 : jamais bloquant.
+    let vehicle:
+      | { consumption: number; currentLevel: number; tankCapacity: number }
+      | undefined
+    try {
+      const profile = await loadDefaultVehicleProfile(db)
+      vehicle = {
+        consumption: profile.consumption,
+        currentLevel: profile.currentLevel,
+        tankCapacity: profile.tankCapacity
+      }
+    } catch {
+      vehicle = undefined
+    }
+
+    // 5. Orchestration enrichie (ticket 011) : haversine + référence + STA-1.
+    const response = await buildStationsList({
       provider,
       query: parsed.data,
-      center
+      center,
+      vehicle
     })
 
     return response

@@ -13,6 +13,7 @@ import { usePreferences, RADIUS_OPTIONS } from '../composables/usePreferences'
 import { useGeolocation } from '../composables/useGeolocation'
 import { useFuelRecommendation } from '../composables/useFuelRecommendation'
 import type { RecommendationRequest } from '../utils/recommendation'
+import type { StationsRequest } from '../utils/stations'
 
 useHead({
   title: 'Je fais le plein ou non ?',
@@ -32,11 +33,21 @@ const reco = useFuelRecommendation()
 
 const searchMessage = ref<string | null>(null)
 const appliedLocation = ref<{ label: string; mode: 'geo' | 'query' } | null>(null)
+const stationsRequest = ref<StationsRequest | null>(null)
 
 // ——— Déclenche une recherche avec un payload RecommendationRequest ———
 async function run(request: RecommendationRequest, label: string, mode: 'geo' | 'query') {
   appliedLocation.value = { label, mode }
   await reco.refresh(request)
+  stationsRequest.value = {
+    radius: request.radius,
+    fuel: request.fuel,
+    lat: request.lat,
+    lon: request.lon,
+    q: request.q,
+    city: request.city,
+    postalCode: request.postalCode
+  }
 }
 
 // ——— Bouton « Utiliser ma position » ———
@@ -224,6 +235,12 @@ const hasError = computed(() => reco.state.value.status === 'error')
         un code postal pour obtenir une recommandation.
       </p>
     </section>
+
+    <StationList
+      v-if="stationsRequest"
+      :request="stationsRequest"
+      class="stations-area"
+    />
 
     <p class="page-foot">
       Prix officiels DGCCRF mis à jour périodiquement. Aucune tendance n’est

@@ -20,9 +20,11 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         // Sur Debian 11 arm64 (Raspberry Pi), les binaires Playwright ne sont
-        // pas téléchargeables : on utilise le chromium système.
+        // pas téléchargeables : on utilise le chromium système. --disable-gpu
+        // évite le blocage EGL/ANGLE sans affichage X sur cette machine.
         launchOptions: {
-          executablePath: '/usr/bin/chromium'
+          executablePath: '/usr/bin/chromium',
+          args: ['--disable-gpu']
         }
       }
     }

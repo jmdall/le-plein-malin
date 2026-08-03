@@ -1,7 +1,7 @@
 ---
 id: 011
 titre: Liste des stations (tri économie nette, fraîcheur, filtres, favoris)
-statut: ready-for-agent
+statut: done
 dependances:
   - "009"
   - "010"

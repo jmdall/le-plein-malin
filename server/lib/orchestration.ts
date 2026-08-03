@@ -17,6 +17,8 @@
 // persistée ni loggée (LOC-4, NFR-SEC-4) : seul le centroïde géocodé ou le
 // centre du rayon transite en mémoire.
 import { haversineKm } from '../../domain/fuel-prices/haversine'
+import { computeFreshness } from '../../domain/fuel-prices/freshness'
+import { computeCandidateEconomics } from '../../domain/fuel-prices/economics'
 import { calculateFuelRecommendation } from '../../domain/recommendation/calculate'
 import { calculateTrendIndicators } from '../../domain/trend/calculateTrend'
 import type { FuelRecommendation } from '../../domain/recommendation/types'
@@ -39,6 +41,35 @@ import type { StationsQuery, ResolvedCenter, ValidVehicleProfile } from './valid
 // ——— Réponse /api/stations ———
 export interface StationsResponse {
   stations: StationPrice[]
+  referenceStation: StationPrice | null
+  query: {
+    center: { lat: number; lon: number }
+    radius: number
+    fuel: FuelType
+  }
+}
+
+// ——— Station enrichie pour la liste (ticket 011, spec §5.3 STA-1) ———
+// Le serveur calcule la distance haversine (D3/LOC-5), les grandeurs
+// d'économie (formules CONTEXT.md, source unique domain/fuel-prices/economics)
+// et la fraîcheur (domain/fuel-prices/freshness). Le client ne recalcule RIEN.
+export interface ListedStation extends StationPrice {
+  distanceKm: number
+  isReference: boolean
+  economics: {
+    detourCost: number | null
+    grossSavings: number | null
+    netSavings: number | null
+  }
+  freshness: {
+    ageInHours: number
+    status: 'fresh' | 'stale' | 'obsolete'
+    score: number
+  }
+}
+
+export interface StationsListResponse {
+  stations: ListedStation[]
   referenceStation: StationPrice | null
   query: {
     center: { lat: number; lon: number }
@@ -186,6 +217,89 @@ export async function buildStationsResponse(options: {
       fuel: query.fuel
     }
   }
+}
+
+// ——— Réponse /api/stations enrichie (ticket 011) ———
+// Même orchestration que buildStationsResponse + distance, fraîcheur et
+// grandeurs d'économie (STA-1) pour chaque station de la liste. En mode
+// ville/CP, le détour A/R est l'hypothèse D2 (max(0, dist_c − dist_r) × 2) ;
+// en mode géolocalisé, il l'est aussi (spec §4, ADR-0002). La référence est
+// marquée isReference et n'a jamais d'économie (elle est le point de
+// comparaison). Le quantity par défaut vient du profil véhicule si fourni.
+export function buildStationsList(options: {
+  provider: FuelPriceProvider
+  query: StationsQuery
+  center: ResolvedCenter
+  vehicle?: { consumption: number; currentLevel: number; tankCapacity: number }
+  now?: () => Date
+}): Promise<StationsListResponse> {
+  return (async () => {
+    const { provider, query, center } = options
+    const now = options.now?.() ?? new Date()
+    const vehicle = options.vehicle
+    const quantity =
+      vehicle && Number.isFinite(vehicle.tankCapacity) && Number.isFinite(vehicle.currentLevel)
+        ? Math.max(0, vehicle.tankCapacity - vehicle.currentLevel)
+        : 0
+
+    const result: ProviderResult = await provider.findNearbyStations({
+      center: { lat: center.lat, lon: center.lon },
+      radiusKm: query.radius,
+      fuel: query.fuel
+    })
+
+    const stations: StationPrice[] = result.stations
+    const withDistance = stations.map((s) => ({
+      ...s,
+      distanceKm: haversineKm({ lat: center.lat, lon: center.lon }, s.position)
+    }))
+
+    const reference = pickReferenceStation(withDistance)
+    const refDistance = reference?.distanceKm ?? null
+    const referenceStation: StationPrice | null = reference
+      ? toStationPriceWithDistance(
+          withDistance.find((s) => s.id === reference.id) as StationWithDistance
+        )
+      : null
+    const referencePrice = referenceStation?.price ?? null
+
+    const listed: ListedStation[] = withDistance.map((s) => {
+      const isReference = reference !== undefined && s.id === reference.id
+      const detourDistanceKm = Math.max(0, s.distanceKm - (refDistance ?? 0)) * 2
+      const economics =
+        referencePrice !== null && vehicle && reference !== undefined && reference.id !== s.id
+          ? computeCandidateEconomics({
+              referencePrice,
+              candidatePrice: s.price,
+              detourDistanceKm,
+              consumption: vehicle.consumption,
+              quantity
+            })
+          : { detourCost: null, grossSavings: null, netSavings: null }
+      const freshness = computeFreshness(s.updatedAt, now)
+      return {
+        ...toStationPriceWithDistance(s),
+        distanceKm: s.distanceKm,
+        isReference,
+        economics,
+        freshness: {
+          ageInHours: freshness.ageInHours,
+          status: freshness.status,
+          score: freshness.score
+        }
+      }
+    })
+
+    return {
+      stations: listed,
+      referenceStation,
+      query: {
+        center: { lat: center.lat, lon: center.lon },
+        radius: query.radius,
+        fuel: query.fuel
+      }
+    }
+  })()
 }
 
 // ——— Construction de FuelRecommendationInput (injection, spec §10.2/10.4) ———

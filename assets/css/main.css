@@ -125,3 +125,8 @@ button {
 .btn-ghost:hover {
   background: var(--surface-raised);
 }
+
+/* ——— Zone de liste des stations (ticket 011) ——— */
+.stations-area {
+  margin-top: 1.25rem;
+}

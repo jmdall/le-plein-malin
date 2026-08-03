@@ -1,5 +1,6 @@
 import type { FreshnessInfo } from '../fuel-prices/types'
 import { computeFreshness } from '../fuel-prices/freshness'
+import { computeCandidateEconomics } from '../fuel-prices/economics'
 import type { FuelRecommendation } from './types'
 import type { CandidateWithDistance, FuelRecommendationInput } from '../stations/types'
 
@@ -40,10 +41,15 @@ function computeCosts(
       continue
     }
 
-    const diffPerLiter = input.referenceStation.price - c.station.price
-    const detourCost = c.detourDistanceKm * (input.vehicle.consumption / 100) * c.station.price
-    const grossSavings = diffPerLiter * quantity
-    const netSavings = grossSavings - detourCost
+    // Formules CONTEXT.md (ticket 011) : source unique partagée avec la liste
+    // des stations (domain/fuel-prices/economics) — aucune duplication.
+    const { detourCost, grossSavings, netSavings } = computeCandidateEconomics({
+      referencePrice: input.referenceStation.price,
+      candidatePrice: c.station.price,
+      detourDistanceKm: c.detourDistanceKm,
+      consumption: input.vehicle.consumption,
+      quantity
+    })
     costs.push({ c, detourCost, grossSavings, netSavings, freshness })
   }
 

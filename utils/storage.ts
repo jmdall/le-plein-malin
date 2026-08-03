@@ -7,7 +7,8 @@ export const STORAGE_KEYS = {
   radius: 'jflp.radius',
   location: 'jflp.location',
   consent: 'jflp.geoConsent',
-  theme: 'jflp.theme'
+  theme: 'jflp.theme',
+  favorites: 'jflp.favorites'
 } as const
 
 export function storageGet<T>(key: string, fallback: T): T {
