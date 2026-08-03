@@ -1,7 +1,7 @@
 ---
 id: 012
 titre: Carte OpenStreetMap (stations dans le rayon, itinéraire)
-statut: ready-for-agent
+statut: done
 dependances:
   - "010"
 priorite: P2

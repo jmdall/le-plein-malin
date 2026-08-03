@@ -6,13 +6,24 @@ const PORT = process.env.E2E_PORT ?? '3100'
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // Raspberry Pi : un seul worker pour ne pas saturer le CPU (2 workers
+  // provoquaient des timeouts de chargement de page).
+  workers: 1,
+  timeout: 60_000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL: `http://localhost:${PORT}`,
-    trace: 'on-first-retry'
+    trace: 'on-first-retry',
+    // Raspberry Pi : le chargement SSR + hydratation + leaflet est lent quand
+    // toute la suite tourne ; les timeouts par défaut (5s) sont insuffisants.
+    actionTimeout: 20_000,
+    navigationTimeout: 30_000
+  },
+  expect: {
+    timeout: 20_000
   },
   projects: [
     {

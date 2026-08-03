@@ -3,6 +3,10 @@
 // recommandation (même position/rayon/carburant). États explicites :
 // idle | loading | success | error. Aucune règle métier dupliquée : le serveur
 // fournit distance, fraîcheur et économies (STA-1, REC-2/D1).
+//
+// L'état est PARTAGÉ au niveau module (singleton) : StationList rafraîchit la
+// liste et StationMap lit les mêmes données depuis le parent — un seul fetch
+// par recherche, aucune divergence (ticket 012).
 import { ref, type Ref } from 'vue'
 import type { StationsRequest, StationsQueryResult } from '../utils/stations'
 
@@ -30,11 +34,12 @@ const EMPTY: StationsState = {
   searchToken: null
 }
 
-export function useStations(): UseStationsReturn {
-  const state = ref<StationsState>({ ...EMPTY })
-  const lastSearch = ref<StationsRequest | null>(null)
-  let token = 0
+// État partagé entre toutes les instances du composable.
+const state = ref<StationsState>({ ...EMPTY })
+const lastSearch = ref<StationsRequest | null>(null)
+let token = 0
 
+export function useStations(): UseStationsReturn {
   async function refresh(request: StationsRequest): Promise<StationsQueryResult | null> {
     lastSearch.value = request
     const myToken = ++token

@@ -61,6 +61,19 @@ test('la recommandation apparaît après une recherche avec mock API', async ({ 
       body: JSON.stringify(MOCK_RECOMMENDATION)
     })
   })
+  // La liste des stations est aussi mockée (liste vide) : le test reste
+  // hermétique, sans appel réel au géocodage Nominatim (403 hors réseau).
+  await page.route('**/api/stations*', (route) => {
+    void route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        stations: [],
+        referenceStation: null,
+        query: { center: { lat: 48.8566, lon: 2.3522 }, radius: 10, fuel: 'Gazole' }
+      })
+    })
+  })
 
   await page.goto('/')
   await page.waitForLoadState('networkidle')

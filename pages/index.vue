@@ -12,6 +12,7 @@ import { FUEL_OPTIONS } from '../utils/fuel'
 import { usePreferences, RADIUS_OPTIONS } from '../composables/usePreferences'
 import { useGeolocation } from '../composables/useGeolocation'
 import { useFuelRecommendation } from '../composables/useFuelRecommendation'
+import { useStations } from '../composables/useStations'
 import type { RecommendationRequest } from '../utils/recommendation'
 import type { StationsRequest } from '../utils/stations'
 
@@ -30,6 +31,7 @@ useHead({
 const prefs = usePreferences()
 const geo = useGeolocation()
 const reco = useFuelRecommendation()
+const stations = useStations()
 
 const searchMessage = ref<string | null>(null)
 const appliedLocation = ref<{ label: string; mode: 'geo' | 'query' } | null>(null)
@@ -155,6 +157,7 @@ function reloadWithRadius() {
 
 const radiusLabel = computed(() => `${prefs.radius.value} km`)
 
+const stationsData = computed(() => stations.state.value.data)
 const loading = computed(() => reco.state.value.status === 'loading')
 const hasRecommendation = computed(
   () => reco.state.value.status === 'success' && reco.state.value.data !== null
@@ -239,6 +242,12 @@ const hasError = computed(() => reco.state.value.status === 'error')
     <StationList
       v-if="stationsRequest"
       :request="stationsRequest"
+      class="stations-area"
+    />
+
+    <StationMap
+      v-if="stationsRequest"
+      :result="stationsData"
       class="stations-area"
     />
 
