@@ -123,6 +123,14 @@ export function createPricesRepository(db: Db) {
           )
         )
         .all()
+    },
+
+    async count(): Promise<number> {
+      const { count } = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(prices)
+        .get()!
+      return count
     }
   }
 }

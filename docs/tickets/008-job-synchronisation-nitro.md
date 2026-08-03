@@ -1,7 +1,7 @@
 ---
 id: 008
 titre: Job de synchronisation Nitro (upsert + historique + purge 48 h)
-statut: ready-for-agent
+statut: done
 dependances:
   - "006"
   - "007"
@@ -23,22 +23,22 @@ douteuse). La base reste toujours cohérente et l'historique alimente la tendanc
 
 **Statut :** ready-for-agent
 
-- [ ] Job Nitro planifié (fréquence type 2 à 4 ×/jour, configurable via env) —
+- [x] Job Nitro planifié (fréquence type 2 à 4 ×/jour, configurable via env) —
       cohérent avec la fréquence observée de la source (recherche §5).
-- [ ] Synchronisation complète : upsert `stations` + `prices`, append
+- [x] Synchronisation complète : upsert `stations` + `prices`, append
       `price_history` du jour (un seul snapshot par station/carburant/jour).
-- [ ] Tolérance à l'échec partiel : un appel qui échoue ne détruit pas les
+- [x] Tolérance à l'échec partiel : un appel qui échoue ne détruit pas les
       données existantes ; retentative au tick suivant ; aucun écriture partielle
       douteuse (recherche §12, ADR-0003).
-- [ ] Purge : les prix de plus de 48 h sont retirés des recommandations mais
+- [x] Purge : les prix de plus de 48 h sont retirés des recommandations mais
       restent visibles avec badge dans la liste (FRE-3, spec §9.6).
-- [ ] Marquage `synced_at` exploité par le cache TTL (007) et le health-check
+- [x] Marquage `synced_at` exploité par le cache TTL (007) et le health-check
       (009).
-- [ ] Tests : intégration sur base de test — run à vide (aucun prix),
+- [x] Tests : intégration sur base de test — run à vide (aucun prix),
       upsert (nouvelle station puis mise à jour du même jour), append quotidien
       (2 jours différents → 2 lignes), échec partiel simulé (données intactes),
       purge 48 h.
-- [ ] `npm run lint && npm run typecheck && npm run test` passe.
+- [x] `npm run lint && npm run typecheck && npm run test` passe.
 
 **Scénarios de test liés :** #17 (repli pendant la synchro), #18 (cache servi
 depuis la base synchronisée, jamais > 24 h sans signalement).

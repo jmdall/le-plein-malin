@@ -4,7 +4,10 @@
 // StationPrice[] normalisés. Aucune règle métier ici.
 import type { FuelType, StationPrice } from '../../domain/fuel-prices/types'
 
-// Rayons de recherche autorisés (cahier des charges §6, spec §5.1-LOC-3).
+// Rayons de recherche autorisés côté API (cahier des charges §6, spec §5.1-LOC-3).
+// La contrainte 5/10/20/30 km est celle de l'API (validée en Zod) ; l'abstraction
+// provider accepte n'importe quel rayon (le job de synchronisation utilise un
+// « rayon large France », ticket 008).
 export const PROVIDER_RADII_KM = [5, 10, 20, 30] as const
 export type ProviderRadiusKm = (typeof PROVIDER_RADII_KM)[number]
 
@@ -13,7 +16,7 @@ export type ProviderRadiusKm = (typeof PROVIDER_RADII_KM)[number]
 // géolocalisation). Le rayon est toujours exprimé en km.
 export interface NearbyStationQuery {
   center: { lat: number; lon: number }
-  radiusKm: ProviderRadiusKm
+  radiusKm: number
   fuel: FuelType
 }
 

@@ -8,6 +8,13 @@
       "when": 1785767285908,
       "tag": "0000_tan_susan_delgado",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1785771785071,
+      "tag": "0001_add-last-sync-meta",
+      "breakpoints": true
     }
   ]
 }

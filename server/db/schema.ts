@@ -69,3 +69,12 @@ export const favorites = sqliteTable('favorites', {
     .references(() => stations.id, { onDelete: 'cascade' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull()
 })
+
+// Métadonnées de synchronisation (spec §8 /api/health, §9.6, ticket 008).
+// Singleton : la dernière synchronisation réussie est lue par /api/health.
+export const lastSync = sqliteTable('last_sync', {
+  key: text('key').primaryKey(),
+  syncedAt: integer('synced_at', { mode: 'timestamp' }).notNull(),
+  source: text('source').notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull()
+})
