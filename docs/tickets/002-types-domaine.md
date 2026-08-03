@@ -1,7 +1,7 @@
 ---
 id: 002
 titre: Types domaine carburants, stations et véhicule (domain/fuel-prices, domain/vehicle, domain/stations)
-statut: ready-for-agent
+statut: in-progress
 dependances:
   - "001"
 priorite: P0

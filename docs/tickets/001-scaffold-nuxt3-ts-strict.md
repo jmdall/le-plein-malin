@@ -1,7 +1,7 @@
 ---
 id: 001
 titre: Scaffold Nuxt 3 + TypeScript strict + ESLint + Vitest + Playwright + Docker
-statut: ready-for-agent
+statut: done
 dependances: []
 priorite: P0
 estimation: M
