@@ -1,7 +1,7 @@
 ---
 id: 013
 titre: Profil véhicule + favoris + historique de consultation + mode sombre
-statut: ready-for-agent
+statut: done
 dependances:
   - "009"
   - "011"

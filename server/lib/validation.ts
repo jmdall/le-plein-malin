@@ -80,12 +80,16 @@ export const vehicleProfileSchema = z
         .number(numError('currentLevel doit être un nombre'))
         .min(0, { error: 'currentLevel doit être ≥ 0' }),
       fuel: fuelSchema,
-      preferredQuantity: z.coerce
-        .number(numError('preferredQuantity doit être un nombre'))
-        .min(0, { error: 'preferredQuantity doit être ≥ 0' })
-        .max(2000, { error: 'preferredQuantity invraisemblable (> 2000 L)' })
-        .nullish()
-        .transform((v) => v ?? null),
+      preferredQuantity: z.preprocess(
+        // Chaîne vide (formulaire non rempli) → absent (null), pas 0.
+        (v) => (v === '' ? undefined : v),
+        z.coerce
+          .number(numError('preferredQuantity doit être un nombre'))
+          .min(0, { error: 'preferredQuantity doit être ≥ 0' })
+          .max(2000, { error: 'preferredQuantity invraisemblable (> 2000 L)' })
+          .nullish()
+          .transform((v) => v ?? null)
+      ),
       savingsThreshold: z.coerce
         .number(numError('savingsThreshold doit être un nombre'))
         .min(0, { error: 'savingsThreshold doit être ≥ 0' })
