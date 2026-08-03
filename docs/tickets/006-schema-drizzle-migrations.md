@@ -1,7 +1,7 @@
 ---
 id: 006
 titre: Schéma Drizzle + SQLite + migrations + accès de base
-statut: ready-for-agent
+statut: done
 dependances:
   - "001"
   - "002"
