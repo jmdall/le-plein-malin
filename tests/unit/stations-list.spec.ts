@@ -117,4 +117,35 @@ describe('buildStationsList (ticket 011, STA-1)', () => {
     expect(res.stations).toHaveLength(3) // obsolète toujours visible (FRE-3)
     expect(byId('obsolete').economics.netSavings).toBeTypeOf('number')
   })
+
+  it('enrichissement 020 : brand/brandWikidataId/logoUrl voyagent quand présents, null sinon', async () => {
+    const enriched = station('e', {
+      name: 'Station Total Réelle',
+      brand: 'TotalEnergies',
+      brandWikidataId: 'Q154037',
+      logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/e/ed/logo.svg',
+      position: { lat: 48.861, lon: 2.341 }
+    })
+    const bare = station('b', { position: { lat: 48.871, lon: 2.351 } })
+    const res = await buildStationsList({
+      provider: localProvider([enriched, bare]),
+      query: { radius: 10, fuel: 'Gazole' as FuelType },
+      center: CENTER,
+      now: () => NOW
+    })
+
+    const byId = (id: string) => res.stations.find((s) => s.id === id)!
+    // Présence : les champs réels de la source (OSM) sont exposés tels quels.
+    expect(byId('e').name).toBe('Station Total Réelle')
+    expect(byId('e').brand).toBe('TotalEnergies')
+    expect(byId('e').brandWikidataId).toBe('Q154037')
+    expect(byId('e').logoUrl).toBe('https://upload.wikimedia.org/wikipedia/commons/e/ed/logo.svg')
+    // Absence : null, jamais inventés (REC-2/D1).
+    expect(byId('b').brand).toBeNull()
+    expect(byId('b').brandWikidataId).toBeNull()
+    expect(byId('b').logoUrl).toBeNull()
+
+    // Attribution OSM exposée pour l'UI (ticket 020, constante 019).
+    expect(res.attribution).toEqual({ source: 'OpenStreetMap (ODbL)' })
+  })
 })

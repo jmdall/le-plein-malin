@@ -6,6 +6,13 @@
 import type { FuelPriceProvider, NearbyStationQuery, ProviderResult } from './types'
 
 export type { FuelPriceProvider, NearbyStationQuery, ProviderResult, ProviderSource } from './types'
+export type {
+  StationMetadata,
+  StationMetadataProvider
+} from './types'
+export { OSM_METADATA_SOURCE_NAME } from './types'
+export { createOsmMetadataProvider, buildLogoUrl, parseOverpassResponse } from './osmMetadata'
+export type { OsmMetadataOptions, FetchLike as OsmMetadataFetchLike } from './osmMetadata'
 export { createOpendatasoftProvider, buildRecordsUrl, OPENDATASOFT_PAGE_SIZE } from './opendatasoft'
 export type { OpendatasoftOptions, FetchLike as OpendatasoftFetchLike } from './opendatasoft'
 export { createJsonExportProvider } from './jsonExport'

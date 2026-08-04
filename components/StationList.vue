@@ -1,10 +1,16 @@
 <script setup lang="ts">
-// StationList — Liste des stations autour de la position (ticket 011, spec
-// §5.3 STA-1/2/3/4, §6 FRE-1/3). Les données viennent de GET /api/stations
-// avec la même position/rayon/carburant que la recommandation. Tri par défaut
-// économie nette décroissante, favoris en tête, référence et non rentables en
-// bas (STA-2/STA-4). Les prix > 48 h restent visibles avec badge explicite
-// (STA-3, FRE-3). Aucune règle métier dupliquée côté client.
+// StationList — Liste des stations, affichée dans la bottom sheet de l'écran
+// carte (ticket 011, spec §5.3 STA-1/2/3/4, §6 FRE-1/3 ; écran carte plein
+// viewport, docs/design/ui-reference.md). Les données viennent de GET
+// /api/stations avec la même position/rayon/carburant que la recommandation.
+// Tri par défaut économie nette décroissante, favoris en tête, référence et
+// non rentables en bas (STA-2/STA-4). Les prix > 48 h restent visibles avec
+// badge explicite (STA-3, FRE-3). Aucune règle métier dupliquée côté client.
+//
+// La feuille est plus étroite que le viewport (panneau desktop ~380 px) : les
+// colonnes de la grille de cartes réagissent à la largeur du CONTENEUR
+// (@container), pas à celle du viewport, pour ne jamais se casser dans la
+// feuille (docs/design/ui-reference.md).
 import { computed, ref, watch } from 'vue'
 import type { ListedStation, StationsRequest } from '../utils/stations'
 import { sortStations } from '../utils/stations'
@@ -14,6 +20,9 @@ import StationCard from './StationCard.vue'
 
 const props = defineProps<{
   request: StationsRequest | null
+  /** id de la station recommandée (reco.recommendedStation.id) : la carte de
+      la liste correspondante porte le badge « ★ Recommandée » (ui-reference §4). */
+  recommendedStationId?: string | null
 }>()
 
 const stations = useStations()
@@ -88,6 +97,7 @@ function onToggleFavorite(id: string) {
         <StationCard
           :station="station"
           :is-favorite="favorites.isFavorite(station.id)"
+          :is-recommended="props.recommendedStationId != null && station.id === props.recommendedStationId"
           @toggle-favorite="onToggleFavorite"
         />
       </li>
@@ -103,29 +113,32 @@ function onToggleFavorite(id: string) {
 
 <style scoped>
 .station-list {
+  container-type: inline-size;
   display: grid;
-  gap: 0.75rem;
+  gap: 0.6rem;
 }
 .station-list-header {
   display: grid;
-  gap: 0.2rem;
+  gap: 0.15rem;
 }
 .station-list-title {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.05rem;
 }
 .station-list-hint {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--text-muted);
 }
 .station-list-error {
   margin: 0;
   padding: 0.8rem 1rem;
-  border: 1px solid #fca5a5;
+  /* Fond d'alerte douce + texte terracotta lisible : tokens seuls, remappés
+     automatiquement en sombre (html.dark) — jamais de couleur en dur. */
+  border: 1px solid var(--terracotta);
   border-radius: 0.6rem;
-  background: #fef2f2;
-  color: #7f1d1d;
+  background: var(--terracotta-bg);
+  color: var(--terracotta-strong);
   font-size: 0.95rem;
 }
 .station-list-empty {
@@ -168,22 +181,16 @@ function onToggleFavorite(id: string) {
   }
 }
 
-@media (min-width: 640px) {
+/* Colonnes pilotées par la largeur RÉELLE de la feuille (conteneur), pas par
+   le viewport : le panneau desktop (~380 px) doit rester à 1 colonne. */
+@container (min-width: 640px) {
   .station-cards {
     grid-template-columns: 1fr 1fr;
   }
 }
-@media (min-width: 1024px) {
+@container (min-width: 900px) {
   .station-cards {
     grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  html.dark .station-list-error {
-    background: #450a0a;
-    border-color: #7f1d1d;
-    color: #fecaca;
   }
 }
 </style>

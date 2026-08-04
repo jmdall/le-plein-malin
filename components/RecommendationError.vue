@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // RecommendationError — État d'erreur compréhensible (ticket 010, spec §14,
 // NFR-SEC-5 : jamais de données inventées — le message vient du serveur ou
-// d'une erreur réseau explicite). Bouton « Réessayer ».
+// d'une erreur réseau explicite). Carte terracotta douce + bouton pilule
+// « Réessayer ».
 defineProps<{
   message: string
 }>()
@@ -24,38 +25,24 @@ const emit = defineEmits<{
 <style scoped>
 .error-card {
   display: grid;
-  gap: 0.6rem;
-  padding: 1rem 1.25rem;
-  border: 1px solid #fca5a5;
-  border-radius: 0.75rem;
-  background: #fef2f2;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--r-lg);
+  background: var(--terracotta-bg);
 }
 .error-title {
   margin: 0;
-  font-size: 1.1rem;
-  color: #991b1b;
+  font-size: 1rem;
+  color: var(--terracotta-strong);
 }
 .error-message {
   margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.5;
-  color: #7f1d1d;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--text-700);
 }
 .error-actions {
   display: flex;
   gap: 0.5rem;
-}
-
-@media (prefers-color-scheme: dark) {
-  html.dark .error-card {
-    background: #450a0a;
-    border-color: #7f1d1d;
-  }
-  html.dark .error-title {
-    color: #fca5a5;
-  }
-  html.dark .error-message {
-    color: #fecaca;
-  }
 }
 </style>

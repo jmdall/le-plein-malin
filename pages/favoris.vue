@@ -8,6 +8,10 @@ import { computed, onMounted, ref } from 'vue'
 import { useHead } from '#imports'
 import { useFavorites } from '../composables/useFavorites'
 import { formatPrice, formatUpdatedAt } from '../utils/format'
+import { OSM_ATTRIBUTION_NOTE } from '../utils/stationIdentity'
+import FuelBadge from '../components/FuelBadge.vue'
+import DirectionsLinks from '../components/DirectionsLinks.vue'
+import BrandBadge from '../components/BrandBadge.vue'
 
 useHead({ title: 'Favoris — Je fais le plein ou non ?' })
 
@@ -18,6 +22,7 @@ interface FavoriteStationDetail {
   id: string
   name: string
   brand: string | null
+  logoUrl?: string | null
   address: string
   city: string
   postalCode: string
@@ -79,110 +84,185 @@ function clearAll() {
 
     <p v-if="loading" role="status">Chargement des favoris…</p>
 
-    <p v-else-if="ids.length === 0" class="empty-state" role="status">
-      Aucun favori pour le moment. Ajoutez une station avec l’étoile dans la
-      liste des stations, ou faites une recherche depuis l’accueil.
-    </p>
+    <div v-else-if="ids.length === 0" class="card empty-state" role="status">
+      <p class="empty-icon" aria-hidden="true">⭐</p>
+      <p class="empty-title">Aucun favori pour le moment</p>
+      <p class="empty-text">
+        Ajoutez une station en appuyant sur l’étoile ☆ dans la liste des
+        stations de la carte, ou faites une recherche depuis l’accueil.
+      </p>
+      <NuxtLink to="/" class="btn btn-primary">Aller à la carte</NuxtLink>
+    </div>
 
-    <p v-if="error" class="favorites-error" role="alert">{{ error }}</p>
+    <template v-else>
+      <p v-if="error" class="favorites-error" role="alert">{{ error }}</p>
 
-    <ul v-else class="favorite-list">
-      <li v-for="station in stations" :key="station.id" class="favorite-card">
-        <div class="favorite-info">
-          <p class="favorite-name">
-            {{ station.name }}
-            <span v-if="station.brand" class="favorite-brand">— {{ station.brand }}</span>
-          </p>
-          <p class="favorite-meta">
+      <ul class="favorite-list">
+        <li v-for="station in stations" :key="station.id" class="card favorite-card">
+          <header class="favorite-header">
+            <p class="favorite-name">
+              {{ station.name }}
+            </p>
+            <BrandBadge
+              v-if="station.brand"
+              :brand="station.brand"
+              :logo-url="station.logoUrl ?? null"
+              :name="station.name"
+            />
+            <button
+              type="button"
+              class="btn btn-ghost favorite-remove"
+              :aria-label="`Retirer ${station.name} des favoris`"
+              @click="removeFavorite(station.id)"
+            >
+              ★ Retirer
+            </button>
+          </header>
+
+          <address class="favorite-address">
             {{ station.address }}, {{ station.postalCode }} {{ station.city }}
-            <template v-if="station.fuel"> · {{ station.fuel }}</template>
-            <template v-if="station.price !== null"> · {{ formatPrice(station.price) }}</template>
-            <template v-else> · <span class="muted">prix indisponible</span></template>
-          </p>
+          </address>
+
+          <dl class="favorite-meta">
+            <div v-if="station.fuel" class="favorite-meta-item">
+              <dt class="sr-only">Carburant</dt>
+              <dd><FuelBadge :fuel="station.fuel" /></dd>
+            </div>
+            <div class="favorite-meta-item">
+              <dt class="sr-only">Prix</dt>
+              <dd class="favorite-price">
+                {{ station.price !== null ? formatPrice(station.price) : '' }}
+                <span v-if="station.price === null" class="muted">prix indisponible</span>
+              </dd>
+            </div>
+          </dl>
+
           <p v-if="station.updatedAt" class="favorite-updated">
             Mis à jour le {{ formatUpdatedAt(new Date(station.updatedAt)) }}
           </p>
-        </div>
-        <div class="favorite-actions">
-          <DirectionsLinks :position="station.position" />
-          <button type="button" class="btn btn-secondary" :aria-label="`Retirer ${station.name} des favoris`" @click="removeFavorite(station.id)">
-            Retirer
-          </button>
-        </div>
-      </li>
-    </ul>
 
-    <div v-if="ids.length > 0" class="favorite-clear">
-      <button type="button" class="btn btn-secondary" @click="clearAll">Vider les favoris</button>
-    </div>
+          <DirectionsLinks :position="station.position" class="favorite-directions" />
+        </li>
+      </ul>
+
+      <div class="favorite-clear">
+        <button type="button" class="btn btn-secondary" @click="clearAll">Vider les favoris</button>
+      </div>
+
+      <p class="favorites-attribution" role="note">{{ OSM_ATTRIBUTION_NOTE }}</p>
+    </template>
   </main>
 </template>
 
 <style scoped>
-.empty-state {
-  margin: 0;
-  padding: 1rem;
-  border: 1px dashed var(--border);
-  border-radius: 0.6rem;
-  background: var(--surface);
+.page {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 2.5rem;
+}
+.page-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.5rem;
+}
+.page-tagline {
+  margin: 0 0 1.25rem;
   color: var(--text-muted);
 }
-.favorites-error {
-  margin: 0.5rem 0;
-  padding: 0.8rem 1rem;
-  border: 1px solid #fca5a5;
-  border-radius: 0.6rem;
-  background: #fef2f2;
-  color: #7f1d1d;
+.empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  text-align: center;
+  padding: 2rem 1.5rem;
 }
-html.dark .favorites-error {
-  background: #450a0a;
-  border-color: #7f1d1d;
-  color: #fecaca;
+.empty-icon {
+  margin: 0;
+  font-size: 2rem;
+}
+.empty-title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+.empty-text {
+  margin: 0 0 0.5rem;
+  color: var(--text-muted);
+  max-width: 26rem;
+}
+.favorites-error {
+  margin: 0 0 0.75rem;
+  padding: 0.8rem 1rem;
+  border-radius: var(--r-md);
+  background: var(--terracotta-bg);
+  color: var(--terracotta-strong);
 }
 .favorite-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.6rem;
+  gap: 0.75rem;
 }
 .favorite-card {
+  display: grid;
+  gap: 0.4rem;
+}
+.favorite-header {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.5rem;
   justify-content: space-between;
-  align-items: center;
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  background: var(--surface);
-}
-.favorite-info {
-  display: grid;
-  gap: 0.2rem;
-  min-width: 0;
+  align-items: flex-start;
 }
 .favorite-name {
   margin: 0;
   font-weight: 600;
 }
-.favorite-brand {
-  font-weight: 400;
-  color: var(--text-muted);
+.favorite-remove {
+  flex: none;
+  padding: 0 0.9rem;
+  font-size: 0.85rem;
 }
-.favorite-meta,
-.favorite-updated {
+.favorite-address {
   margin: 0;
+  font-style: normal;
   font-size: 0.9rem;
   color: var(--text-muted);
 }
-.favorite-actions {
+.favorite-meta {
+  margin: 0.1rem 0 0;
   display: flex;
-  gap: 0.5rem;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+.favorite-meta-item dd {
+  margin: 0;
+}
+.favorite-price {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+.muted {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 0.85rem;
+}
+.favorite-updated {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.favorite-directions {
+  margin-top: 0.2rem;
 }
 .favorite-clear {
-  margin-top: 1rem;
+  margin-top: 0.5rem;
+}
+.favorites-attribution {
+  margin: 1.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--text-500);
+  line-height: 1.4;
 }
 </style>

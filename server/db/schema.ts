@@ -6,6 +6,8 @@ export const stations = sqliteTable('stations', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   brand: text('brand'),
+  brandWikidataId: text('brand_wikidata_id'),
+  logoUrl: text('logo_url'),
   address: text('address').notNull(),
   city: text('city').notNull(),
   postalCode: text('postal_code').notNull(),

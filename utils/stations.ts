@@ -10,6 +10,11 @@ export interface ListedStation {
   id: string
   name: string
   brand: string | null
+  // Enrichissement d'identité (016-019, ticket 020) : optionnels en miroir du
+  // domaine StationPrice — le serveur les envoie null quand la source ne les
+  // fournit pas. L'UI affiche le logo/enseigne seulement s'ils sont présents.
+  brandWikidataId?: string | null
+  logoUrl?: string | null
   address: string
   city: string
   postalCode: string
@@ -39,6 +44,9 @@ export interface StationsQueryResult {
     radius: number
     fuel: string
   }
+  // Attribution OSM (ODbL) fournie par l'API (ticket 020) : l'UI l'affiche
+  // sans la recoder (REC-2/D1).
+  attribution?: { source: string }
 }
 
 export type StationsRequest = Omit<RecommendationRequest, 'vehicleProfile'>

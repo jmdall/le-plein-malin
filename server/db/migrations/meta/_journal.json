@@ -15,6 +15,13 @@
       "when": 1785771785071,
       "tag": "0001_add-last-sync-meta",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785852151545,
+      "tag": "0002_add-station-brand-enrichment",
+      "breakpoints": true
     }
   ]
 }

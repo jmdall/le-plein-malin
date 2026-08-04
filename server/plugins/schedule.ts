@@ -6,6 +6,7 @@
 import { defineNitroPlugin } from 'nitropack/runtime'
 import { createDb } from '../db/client'
 import { createSyncProviderChain } from '../providers/syncChain'
+import { createOsmMetadataProvider } from '../providers/osmMetadata'
 import { scheduleSyncPrices } from '../jobs/schedule'
 
 export default defineNitroPlugin((nitroApp) => {
@@ -18,9 +19,14 @@ export default defineNitroPlugin((nitroApp) => {
   // la France entière (server/providers/syncChain.ts).
   const provider = createSyncProviderChain(db)
 
+  // Enrichissement d'identité (ticket 019) : le job périodique applique OSM →
+  // dérivation adresse → nom par défaut à chaque station synchronisée.
+  const metadataProvider = createOsmMetadataProvider()
+
   const stop = scheduleSyncPrices({
     db,
     provider,
+    metadataProvider,
     onError: (error) => {
       nitroApp.captureError(error instanceof Error ? error : new Error(String(error)), {
         tags: ['sync']

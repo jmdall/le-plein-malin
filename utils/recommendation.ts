@@ -9,6 +9,9 @@ export interface RecommendationStation {
   id: string
   name: string
   brand: string | null
+  /** Enrichissement d'identité (020) : URL de logo validée côté serveur,
+      null quand absente — l'UI ne fait que l'afficher (REC-2/D1). */
+  logoUrl?: string | null
   address: string
   city: string
   postalCode: string

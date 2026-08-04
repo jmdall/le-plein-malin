@@ -6,12 +6,30 @@
 import { expect, test } from '@playwright/test'
 
 const NOW = new Date().toISOString()
+const LOGO_URL = 'https://upload.wikimedia.org/wikipedia/commons/e/ed/logo.svg'
+// Pixel PNG 1×1 : sert à « charger » les logos sans dépendre du réseau en CI.
+const PIXEL_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
+// Les logos de marque pointent vers upload.wikimedia.org (hors réseau en CI) :
+// on les mocke pour que l'<img> se charge et reste dans le DOM (sinon le repli
+// onerror le retirerait — comportement voulu, mais pas testé ici).
+async function mockLogos(page: import('@playwright/test').Page) {
+  await page.route('https://upload.wikimedia.org/**', (route) => {
+    void route.fulfill({
+      status: 200,
+      contentType: 'image/png',
+      body: Buffer.from(PIXEL_PNG_BASE64, 'base64')
+    })
+  })
+}
 
 function station(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'st-1',
     name: 'Station Alpha',
     brand: 'Total',
+    logoUrl: LOGO_URL,
     address: '1 avenue des Tests',
     city: 'Paris',
     postalCode: '75001',
@@ -66,6 +84,7 @@ const MOCK_STATIONS = {
     id: 'st-ref',
     name: 'Station Référence',
     brand: null,
+    logoUrl: null,
     address: '2 rue Ref',
     city: 'Paris',
     postalCode: '75001',
@@ -86,6 +105,7 @@ const MOCK_RECOMMENDATION = {
       id: 'st-fresh',
       name: 'Station Fraîche',
       brand: 'Total',
+      logoUrl: LOGO_URL,
       address: '1 avenue des Tests',
       city: 'Paris',
       postalCode: '75001',
@@ -98,6 +118,7 @@ const MOCK_RECOMMENDATION = {
       id: 'st-ref',
       name: 'Station Référence',
       brand: null,
+      logoUrl: null,
       address: '2 rue Ref',
       city: 'Paris',
       postalCode: '75001',
@@ -134,12 +155,13 @@ test('la liste des stations apparaît après une recherche avec mock API', async
       body: JSON.stringify(MOCK_STATIONS)
     })
   })
+  await mockLogos(page)
 
   await page.goto('/')
   await page.waitForLoadState('networkidle')
   await page.waitForTimeout(1500)
 
-  await page.getByPlaceholder('Ex. : Lyon ou 69001').fill('Paris')
+  await page.getByPlaceholder('Rechercher une ville, une adresse…').fill('Paris')
   await page.getByRole('button', { name: 'Rechercher', exact: true }).click()
 
   // La liste apparaît (section dédiée) avec son titre.
@@ -153,6 +175,12 @@ test('la liste des stations apparaît après une recherche avec mock API', async
   await expect(page.getByText(/1,2 km/).first()).toBeVisible()
   await expect(page.getByText(/mis à jour le/).first()).toBeVisible()
   await expect(page.getByTestId('station-net-savings').first()).toContainText('5,62 €')
+
+  // Ticket 021 : le nom réel remplace l'id et l'enseigne+logo s'affichent
+  // (logo décoratif alt="", le nom reste en texte — NFR-ACC-4).
+  await expect(page.getByTestId('brand-badge').first()).toContainText('Total')
+  await expect(page.getByTestId('brand-badge').first().locator('img')).toHaveAttribute('alt', '')
+  await expect(page.getByText(/Noms et logos des stations/).first()).toBeVisible()
 
   // Badge de fraîcheur exact (STA-3, FRE-1).
   await expect(page.getByText('potentiellement obsolète')).toBeVisible()

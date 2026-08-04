@@ -328,8 +328,10 @@ describe('provider cache SQLite (priorité 4)', () => {
       const synced = new Date('2026-08-03T10:00:00Z')
       await stationsRepo.upsert({
         id: '75001003',
-        name: '75001003',
-        brand: null,
+        name: 'TotalEnergies Bailleul',
+        brand: 'TotalEnergies',
+        brandWikidataId: 'Q154037',
+        logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/e/ed/logo.svg',
         address: '8,10,10bis Rue Bailleul',
         city: 'PARIS',
         postalCode: '75001',
@@ -356,6 +358,12 @@ describe('provider cache SQLite (priorité 4)', () => {
       expect(result.syncedAt).toEqual(synced)
       expect(result.stations).toHaveLength(1)
       expect(result.stations[0]!.price).toBe(2.59)
+      // Enrichissement (019) : le cache renvoie le nom réel, l'enseigne et le
+      // logo stockés en base — jamais inventés, null si absents.
+      expect(result.stations[0]!.name).toBe('TotalEnergies Bailleul')
+      expect(result.stations[0]!.brand).toBe('TotalEnergies')
+      expect(result.stations[0]!.brandWikidataId).toBe('Q154037')
+      expect(result.stations[0]!.logoUrl).toBe('https://upload.wikimedia.org/wikipedia/commons/e/ed/logo.svg')
     } finally {
       h.close()
     }

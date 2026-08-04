@@ -30,6 +30,7 @@ import type {
   FuelRecommendationInput,
   TrendSignal
 } from '../../domain/stations/types'
+import { OSM_METADATA_SOURCE_NAME } from '../providers/types'
 import type { FuelPriceProvider, ProviderResult } from '../providers/types'
 import type { Db } from '../db/client'
 import { createStationsRepository } from '../repositories/stations'
@@ -47,6 +48,11 @@ export interface StationsResponse {
     radius: number
     fuel: FuelType
   }
+  // Attribution OSM (ODbL, ticket 018/020) : la mention que l'UI affiche pour
+  // créditer la source des métadonnées d'identité (noms réels / enseigne /
+  // logo). Constante de 019, jamais recodée côté client (REC-2/D1). Toujours
+  // présente : les métadonnées viennent toujours d'OSM.
+  attribution: { source: string }
 }
 
 // ——— Station enrichie pour la liste (ticket 011, spec §5.3 STA-1) ———
@@ -66,6 +72,12 @@ export interface ListedStation extends StationPrice {
     status: 'fresh' | 'stale' | 'obsolete'
     score: number
   }
+  // Enrichissement d'identité (016-019) : l'enseigne réelle, son identifiant
+  // Wikidata et l'URL du logo, exposés par l'API quand disponibles (ticket
+  // 020). Nullables — jamais inventés (REC-2/D1) ; le nom réel est `name`.
+  brand: string | null
+  brandWikidataId: string | null
+  logoUrl: string | null
 }
 
 export interface StationsListResponse {
@@ -76,6 +88,9 @@ export interface StationsListResponse {
     radius: number
     fuel: FuelType
   }
+  // Attribution OSM (ODbL) pour les métadonnées d'identité des stations —
+  // affichée par l'UI (ticket 021), constante 019.
+  attribution: { source: string }
 }
 
 // ——— Réponse /api/recommendation ———
@@ -132,6 +147,8 @@ export interface StationInRadius {
   id: string
   name: string
   brand: string | null
+  brandWikidataId: string | null
+  logoUrl: string | null
   address: string
   city: string
   postalCode: string
@@ -148,6 +165,8 @@ export function toStationPrice(row: StationInRadius): StationPrice {
     id: row.id,
     name: row.name,
     brand: row.brand,
+    brandWikidataId: row.brandWikidataId,
+    logoUrl: row.logoUrl,
     address: row.address,
     city: row.city,
     postalCode: row.postalCode,
@@ -169,6 +188,8 @@ export function toStationPriceWithDistance(s: StationWithDistance): StationPrice
     id: s.id,
     name: s.name,
     brand: s.brand,
+    brandWikidataId: s.brandWikidataId,
+    logoUrl: s.logoUrl,
     address: s.address,
     city: s.city,
     postalCode: s.postalCode,
@@ -215,7 +236,8 @@ export async function buildStationsResponse(options: {
       center: { lat: center.lat, lon: center.lon },
       radius: query.radius,
       fuel: query.fuel
-    }
+    },
+    attribution: { source: OSM_METADATA_SOURCE_NAME }
   }
 }
 
@@ -278,6 +300,11 @@ export async function buildStationsList(options: {
       const freshness = computeFreshness(s.updatedAt, now)
       return {
         ...toStationPriceWithDistance(s),
+        // Enrichissement d'identité : toujours présents (null si absents —
+        // jamais inventés, REC-2/D1). Le nom réel est déjà `name` (019).
+        brand: s.brand ?? null,
+        brandWikidataId: s.brandWikidataId ?? null,
+        logoUrl: s.logoUrl ?? null,
         distanceKm: s.distanceKm,
         isReference,
         economics,
@@ -296,7 +323,8 @@ export async function buildStationsList(options: {
         center: { lat: center.lat, lon: center.lon },
         radius: query.radius,
         fuel: query.fuel
-      }
+      },
+      attribution: { source: OSM_METADATA_SOURCE_NAME }
     }
 }
 
@@ -453,6 +481,9 @@ export interface StationDetailResponse {
     price: number | null
     fuel: FuelType | null
     updatedAt: Date | null
+    brand: string | null
+    brandWikidataId: string | null
+    logoUrl: string | null
   }
   prices: Array<{ fuel: FuelType; price: number; updatedAt: Date; rupture: boolean }>
 }
@@ -484,6 +515,8 @@ export async function buildStationDetailResponse(options: {
       id: station.id,
       name: station.name,
       brand: station.brand,
+      brandWikidataId: station.brandWikidataId,
+      logoUrl: station.logoUrl,
       address: station.address,
       city: station.city,
       postalCode: station.postalCode,

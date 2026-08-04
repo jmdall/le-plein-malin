@@ -7,12 +7,30 @@
 import { expect, test } from '@playwright/test'
 
 const NOW = new Date().toISOString()
+const LOGO_URL = 'https://upload.wikimedia.org/wikipedia/commons/e/ed/logo.svg'
+// Pixel PNG 1×1 : sert à « charger » les logos sans dépendre du réseau en CI.
+const PIXEL_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
+// Les logos de marque pointent vers upload.wikimedia.org (hors réseau en CI) :
+// on les mocke pour que l'<img> se charge et reste dans le DOM (sinon le repli
+// onerror le retirerait — comportement voulu, mais pas testé ici).
+async function mockLogos(page: import('@playwright/test').Page) {
+  await page.route('https://upload.wikimedia.org/**', (route) => {
+    void route.fulfill({
+      status: 200,
+      contentType: 'image/png',
+      body: Buffer.from(PIXEL_PNG_BASE64, 'base64')
+    })
+  })
+}
 
 function station(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'st-1',
     name: 'Station Alpha',
     brand: 'Total',
+    logoUrl: LOGO_URL,
     address: '1 avenue des Tests',
     city: 'Paris',
     postalCode: '75001',
@@ -41,6 +59,8 @@ const MOCK_STATIONS = {
       id: 'st-ref',
       name: 'Station Référence',
       price: 2.05,
+      brand: 'Esso',
+      logoUrl: null,
       isReference: true,
       position: { lat: 48.857, lon: 2.353 },
       economics: { detourCost: null, grossSavings: null, netSavings: null },
@@ -50,7 +70,8 @@ const MOCK_STATIONS = {
   referenceStation: {
     id: 'st-ref',
     name: 'Station Référence',
-    brand: null,
+    brand: 'Esso',
+    logoUrl: null,
     address: '2 rue Ref',
     city: 'Paris',
     postalCode: '75001',
@@ -71,6 +92,7 @@ const MOCK_RECOMMENDATION = {
       id: 'st-fresh',
       name: 'Station Fraîche',
       brand: 'Total',
+      logoUrl: LOGO_URL,
       address: '1 avenue des Tests',
       city: 'Paris',
       postalCode: '75001',
@@ -83,6 +105,7 @@ const MOCK_RECOMMENDATION = {
       id: 'st-ref',
       name: 'Station Référence',
       brand: null,
+      logoUrl: null,
       address: '2 rue Ref',
       city: 'Paris',
       postalCode: '75001',
@@ -119,12 +142,13 @@ test('la carte se monte après une recherche avec mock API /api/stations', async
       body: JSON.stringify(MOCK_STATIONS)
     })
   })
+  await mockLogos(page)
 
   await page.goto('/')
   await page.waitForLoadState('networkidle')
   await page.waitForTimeout(1500)
 
-  await page.getByPlaceholder('Ex. : Lyon ou 69001').fill('Paris')
+  await page.getByPlaceholder('Rechercher une ville, une adresse…').fill('Paris')
   await page.getByRole('button', { name: 'Rechercher', exact: true }).click()
 
   // La carte est bien montée (conteneur Leaflet), indépendamment des tuiles.
@@ -143,4 +167,11 @@ test('la carte se monte après une recherche avec mock API /api/stations', async
   const markers = page.locator('.jflp-marker')
   await expect(markers).toHaveCount(2)
   await expect(page.locator('.jflp-marker-reference')).toHaveCount(1)
+
+  // Ticket 021 : le badge marqueur porte le logo d'enseigne (décoratif,
+  // alt vide — NFR-ACC-4), la référence (sans logo) porte le repli initiale.
+  await expect(page.locator('img.jflp-price-badge-logo')).toHaveCount(1)
+  await expect(page.locator('img.jflp-price-badge-logo')).toHaveAttribute('alt', '')
+  await expect(page.locator('.jflp-price-badge-logo-fallback')).toHaveCount(1)
+  await expect(page.locator('.jflp-price-badge-logo-fallback')).toHaveText('E')
 })

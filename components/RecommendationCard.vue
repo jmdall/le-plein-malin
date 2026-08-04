@@ -4,7 +4,9 @@
 // type, confiance, station conseillée, prix, date de mise à jour, économie
 // nette, explication synthétique, fraîcheur, isPartial ; boutons « Voir le
 // calcul » (panneau dépliable) et « Itinéraire » (OSM, spec §4 #7).
-// Aucune règle métier n'est recalculée ici.
+// Aucune règle métier n'est recalculée ici : la couleur du verdict et du
+// montant ne fait que lire le SIGNE de netSavings/grossSavings déjà fourni
+// par l'API (vert = favorable, terracotta = défavorable, neutre sinon).
 import { computed, ref } from 'vue'
 import {
   RECOMMENDATION_TITLES,
@@ -22,6 +24,7 @@ import { fuelFromApi, fuelOptionFor } from '../utils/fuel'
 import { buildDirectionsUrl } from '../utils/location'
 import DirectionsLinks from './DirectionsLinks.vue'
 import FuelBadge from './FuelBadge.vue'
+import BrandBadge from './BrandBadge.vue'
 
 const props = defineProps<{
   recommendation: Recommendation
@@ -32,8 +35,11 @@ const panelOpen = ref(false)
 const title = computed(() => RECOMMENDATION_TITLES[props.recommendation.type] ?? props.recommendation.type)
 const confidence = computed(() => confidenceLabel(props.recommendation.confidence))
 const station = computed(() => props.recommendation.recommendedStation)
-const stationName = computed(() => station.value?.name ?? props.recommendation.referenceStation?.name ?? '—')
-const stationCity = computed(() => station.value?.city ?? props.recommendation.referenceStation?.city ?? '')
+// Station effectivement présentée : la recommandée, sinon la station de
+// référence (021 §33 — le nom réel de la référence s'affiche aussi en texte).
+const displayedStation = computed(() => station.value ?? props.recommendation.referenceStation ?? null)
+const stationName = computed(() => displayedStation.value?.name ?? '—')
+const stationCity = computed(() => displayedStation.value?.city ?? '')
 const price = computed(() => station.value?.price ?? props.recommendation.referenceStation?.price)
 const updatedAt = computed(() =>
   station.value ? new Date(station.value.updatedAt) : props.recommendation.referenceStation ? new Date(props.recommendation.referenceStation.updatedAt) : null
@@ -50,7 +56,7 @@ const isPartial = computed(() => props.recommendation.isPartial)
 const directionsUrl = computed(() =>
   station.value ? buildDirectionsUrl(station.value.position) : null
 )
-const fuelLabel = computed(() => fuelOptionFor(fuelFromApi(station.value?.fuel)).label)
+const fuelLabel = computed(() => fuelOptionFor(fuelFromApi(displayedStation.value?.fuel)).label)
 const confidencePercent = computed(() => Math.round(props.recommendation.confidence * 100))
 
 const freshnessStatusLabel = computed(() => {
@@ -64,6 +70,33 @@ const freshnessStatusLabel = computed(() => {
     default:
       return ''
   }
+})
+
+const freshnessPillClass = computed(() => {
+  if (freshnessStatus.value === 'obsolete') return 'pill-terracotta'
+  if (freshnessStatus.value === 'stale') return 'pill-muted is-attenuated'
+  return 'pill-outline'
+})
+
+// Montant mis en avant : l'économie nette prime, l'économie brute ne sert que
+// de repli si le serveur n'a pas fourni de net (REC-2/D1, pas de calcul ici).
+const amountValue = computed(() => (netSavings.value !== null && netSavings.value !== undefined ? netSavings.value : grossSavings.value))
+const amountIsNet = computed(() => netSavings.value !== null && netSavings.value !== undefined)
+const amountTone = computed(() => {
+  if (amountValue.value === null || amountValue.value === undefined) return 'tone-neutral'
+  if (amountValue.value > 0) return 'tone-positive'
+  if (amountValue.value < 0) return 'tone-negative'
+  return 'tone-neutral'
+})
+
+// Pilule de verdict : vert pour toute action favorable (aller à la station,
+// plein complet ou partiel), terracotta seulement si la meilleure option
+// connue reste en perte nette, neutre chaud sinon (« attendre » sans enjeu).
+const verdictPillClass = computed(() => {
+  const t = props.recommendation.type
+  if (t === 'go-to-station' || t === 'partial-fill' || t === 'fill-now') return 'pill-accent'
+  if (netSavings.value !== null && netSavings.value !== undefined && netSavings.value < 0) return 'pill-terracotta'
+  return 'pill-muted'
 })
 
 const showStationSection = computed(
@@ -80,20 +113,45 @@ function togglePanel() {
 </script>
 
 <template>
-  <article class="recommendation-card" :class="`type-${recommendation.type}`">
+  <article class="recommendation-card card" :class="`type-${recommendation.type}`">
     <header class="rec-header">
-      <h2 class="rec-title">{{ title }}</h2>
-      <p class="rec-confidence" :aria-label="`Niveau de confiance ${confidencePercent} %`">
-        Confiance <strong>{{ confidence }}</strong> ({{ confidencePercent }} %)
-      </p>
+      <h2 class="rec-title pill" :class="verdictPillClass">{{ title }}</h2>
+
+      <div class="rec-badges">
+        <span class="pill pill-outline rec-confidence" :aria-label="`Niveau de confiance ${confidencePercent} %`">
+          Confiance {{ confidence }} ({{ confidencePercent }} %)
+        </span>
+        <span class="pill rec-freshness-pill" :class="freshnessPillClass" :data-status="freshnessStatus">
+          <span class="freshness-dot" aria-hidden="true" />
+          {{ freshnessStatusLabel }}<span v-if="ageLabel"> · {{ ageLabel }}</span>
+        </span>
+      </div>
+
       <p v-if="isPartial" class="rec-partial" role="note">
         Recommandation partielle : certaines données manquent.
       </p>
     </header>
 
+    <div v-if="amountValue !== null && amountValue !== undefined" class="rec-amount" :class="amountTone">
+      <span class="rec-amount-label">{{ amountIsNet ? 'Économie nette' : 'Économie brute' }}</span>
+      <span class="rec-amount-value" :data-testid="amountIsNet ? 'net-savings' : 'gross-savings'">
+        {{ formatCurrency(amountValue) }}
+      </span>
+      <span v-if="amountIsNet && detourCost !== null && detourCost !== undefined" class="rec-amount-detail">
+        détour de {{ formatCurrency(detourCost) }} déjà déduit
+      </span>
+    </div>
+
     <section v-if="showStationSection" class="rec-station" aria-label="Station conseillée">
       <p class="rec-station-name">
         {{ stationName }}
+        <BrandBadge
+          v-if="displayedStation?.brand"
+          :brand="displayedStation.brand"
+          :logo-url="displayedStation.logoUrl ?? null"
+          :name="displayedStation.name"
+          size="sm"
+        />
         <FuelBadge v-if="fuelLabel" :fuel="fuelLabel" />
       </p>
       <p v-if="stationCity" class="rec-station-city">{{ stationCity }}</p>
@@ -102,15 +160,6 @@ function togglePanel() {
       </p>
       <p v-if="quantity !== null && quantity !== undefined" class="rec-quantity">
         Volume conseillé : {{ formatQuantity(quantity) }}
-      </p>
-      <p v-if="netSavings !== null && netSavings !== undefined" class="rec-savings" data-testid="net-savings">
-        Économie nette : <strong>{{ formatCurrency(netSavings) }}</strong>
-      </p>
-      <p v-else-if="grossSavings !== null && grossSavings !== undefined" class="rec-savings" data-testid="gross-savings">
-        Économie brute : <strong>{{ formatCurrency(grossSavings) }}</strong>
-      </p>
-      <p v-if="detourCost !== null && detourCost !== undefined" class="rec-detour-cost">
-        Coût du détour : {{ formatCurrency(detourCost) }}
       </p>
     </section>
 
@@ -123,13 +172,8 @@ function togglePanel() {
     </section>
 
     <footer class="rec-footer">
-      <p class="rec-freshness">
-        <span class="freshness-dot" :data-status="freshnessStatus" aria-hidden="true" />
-        {{ freshnessStatusLabel }}
-        <span v-if="updatedAt" class="rec-updated" data-testid="rec-updated">
-          Mis à jour le {{ formatUpdatedAt(updatedAt) }}
-        </span>
-        <span v-if="ageLabel"> — {{ ageLabel }}</span>
+      <p v-if="updatedAt" class="rec-updated">
+        Mis à jour le <span data-testid="rec-updated">{{ formatUpdatedAt(updatedAt) }}</span>
       </p>
 
       <div class="rec-actions">
@@ -191,70 +235,115 @@ function togglePanel() {
 <style scoped>
 .recommendation-card {
   display: grid;
-  gap: 0.9rem;
-  padding: 1.1rem 1.25rem;
-  border: 1px solid var(--border);
-  border-radius: 0.9rem;
-  background: var(--surface);
-  box-shadow: var(--shadow-soft);
+  gap: 0.65rem;
+  padding: 0.9rem 1rem;
 }
 .rec-header {
   display: grid;
-  gap: 0.3rem;
+  gap: 0.5rem;
 }
 .rec-title {
   margin: 0;
-  font-size: 1.3rem;
+  align-self: start;
+  white-space: normal;
+  text-align: center;
+  font-size: 1.1rem;
   line-height: 1.25;
+  padding: 0.6rem 1.1rem;
 }
-.rec-confidence {
-  margin: 0;
-  font-size: 0.9rem;
-  color: var(--text-muted);
+.rec-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.rec-confidence,
+.rec-freshness-pill {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+}
+.rec-freshness-pill.is-attenuated {
+  opacity: 0.85;
+}
+.freshness-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
 }
 .rec-partial {
   margin: 0;
-  font-size: 0.85rem;
-  color: #b45309;
-  background: #fef3c7;
-  border: 1px solid #fde68a;
-  border-radius: 0.5rem;
-  padding: 0.4rem 0.6rem;
+  font-size: 0.82rem;
+  color: var(--terracotta-strong);
+  background: var(--terracotta-bg);
+  border-radius: var(--r-md);
+  padding: 0.45rem 0.65rem;
+}
+.rec-amount {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--r-lg);
+  background: var(--slate-100);
+}
+.rec-amount.tone-positive {
+  background: var(--accent-bg);
+}
+.rec-amount.tone-negative {
+  background: var(--terracotta-bg);
+}
+.rec-amount-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-700);
+}
+.rec-amount-value {
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--text-900);
+}
+.rec-amount.tone-positive .rec-amount-value {
+  color: var(--positive);
+}
+.rec-amount.tone-negative .rec-amount-value {
+  color: var(--negative);
+}
+.rec-amount-detail {
+  font-size: 0.78rem;
+  color: var(--text-700);
 }
 .rec-station {
   display: grid;
-  gap: 0.25rem;
-  padding: 0.75rem;
-  border: 1px dashed var(--border);
-  border-radius: 0.6rem;
-  background: var(--surface-raised);
+  gap: 0.2rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--r-md);
+  background: var(--slate-100);
 }
 .rec-station-name {
   margin: 0;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 0.95rem;
 }
 .rec-station-city {
   margin: 0;
-  color: var(--text-muted);
-  font-size: 0.9rem;
+  color: var(--text-700);
+  font-size: 0.85rem;
 }
 .rec-price {
-  margin: 0.35rem 0 0;
-  font-size: 1.6rem;
-  font-weight: 700;
+  margin: 0.15rem 0 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-700);
 }
-.rec-quantity,
-.rec-savings,
-.rec-detour-cost {
+.rec-quantity {
   margin: 0;
-  font-size: 0.95rem;
-}
-.rec-savings strong {
-  color: var(--positive);
+  font-size: 0.9rem;
+  color: var(--text-900);
 }
 .rec-reasons {
   margin: 0;
@@ -263,42 +352,21 @@ function togglePanel() {
   margin: 0;
   padding-left: 1.1rem;
   display: grid;
-  gap: 0.3rem;
+  gap: 0.25rem;
 }
 .rec-reason {
-  font-size: 0.95rem;
-  line-height: 1.45;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  color: var(--text-700);
 }
 .rec-footer {
   display: grid;
-  gap: 0.6rem;
-}
-.rec-freshness {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-.freshness-dot {
-  width: 0.6rem;
-  height: 0.6rem;
-  border-radius: 50%;
-  display: inline-block;
-}
-.freshness-dot[data-status='fresh'] {
-  background: #22c55e;
-}
-.freshness-dot[data-status='stale'] {
-  background: #f59e0b;
-}
-.freshness-dot[data-status='obsolete'] {
-  background: #ef4444;
+  gap: 0.5rem;
 }
 .rec-updated {
-  color: var(--text-muted);
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-700);
 }
 .rec-actions {
   display: flex;
@@ -307,48 +375,37 @@ function togglePanel() {
 }
 .rec-panel {
   display: grid;
-  gap: 0.8rem;
+  gap: 0.7rem;
   border-top: 1px solid var(--border);
-  padding-top: 0.9rem;
+  padding-top: 0.8rem;
 }
 .panel-title {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.95rem;
 }
 .panel-block {
   display: grid;
-  gap: 0.3rem;
+  gap: 0.25rem;
 }
 .panel-subtitle {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  color: var(--text-muted);
+  color: var(--text-700);
 }
 .panel-list {
   margin: 0;
   padding-left: 1.1rem;
   display: grid;
-  gap: 0.25rem;
-  font-size: 0.9rem;
-  line-height: 1.45;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 .panel-note {
   margin: 0;
-  font-size: 0.85rem;
-  color: #b45309;
-}
-
-@media (prefers-color-scheme: dark) {
-  html.dark .rec-partial {
-    color: #fbbf24;
-    background: #451a03;
-    border-color: #92400e;
-  }
-  html.dark .panel-note {
-    color: #fbbf24;
-  }
+  font-size: 0.82rem;
+  color: var(--terracotta-strong);
 }
 </style>

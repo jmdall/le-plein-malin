@@ -1,41 +1,190 @@
-/* assets/css/main.css — Styles globaux « Je fais le plein ou non ? » (ticket 010).
-   Mobile-first : la page principale est utilisable sur écran ≤ 360 px
-   (NFR-RES-1) ; cibles tactiles ≥ 44 px (NFR-RES-2) ; contrastes WCAG AA en
-   mode clair et sombre (NFR-ACC-2). Le thème sombre est piloté par la classe
-   `dark` sur <html> (composables/useDarkMode). */
+/* assets/css/main.css — Design system global « Je fais le plein ou non ? ».
+   ───────────────────────────────────────────────────────────────────────────
+   Palette chaude (crème / brun / vert / terracotta) reprise de
+   docs/design/ui-reference.md. La cible visuelle est une CARTE PLEIN VIEWPORT
+   sur laquelle flottent des contrôles en pilule — d'où les primitives
+   `.overlay-card`, `.fab`, `.segmented`, `.pill` ci-dessous.
+
+   Le contrat d'interface pour les autres écrans est documenté dans
+   docs/design/ui-reference.md § « Primitives CSS disponibles ». Toute classe
+   ou token ajouté ici doit y être décrit.
+
+   Contraintes qui survivent au redesign :
+   - cibles tactiles ≥ 44 px (NFR-RES-2) ;
+   - utilisable à ≤ 360 px de large (NFR-RES-1) ;
+   - contrastes WCAG AA en clair ET en sombre (NFR-ACC-2) ;
+   - navigation clavier + skip-link (NFR-ACC-1).
+
+   Le thème sombre est piloté par la classe `dark` sur <html>
+   (composables/useDarkMode). */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   1. TOKENS — thème clair
+   ═════════════════════════════════════════════════════════════════════════ */
 :root {
-  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  /* ——— Typographie ———
+     Inter n'est PAS chargée depuis un CDN : contrainte RGPD / PWA hors-ligne,
+     aucun <link> vers Google Fonts. Inter reste en tête de pile pour être
+     utilisée si elle est présente sur la machine ; sinon repli system-ui.
+     Pour l'auto-héberger plus tard : poser les .woff2 dans public/fonts/ et
+     ajouter les @font-face ici (le précache PWA embarque déjà les .woff2). */
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
-  /* Clair */
-  --bg: #f7f8fa;
-  --surface: #ffffff;
-  --surface-raised: #eef1f4;
-  --text: #1a202c;
-  --text-muted: #4a5568;
-  --border: #cbd5e1;
-  --accent: #1d4ed8;
-  --accent-hover: #1e40af;
-  --accent-contrast: #ffffff;
-  --focus: #1d4ed8;
-  --positive: #166534;
-  --shadow-soft: 0 1px 3px rgb(0 0 0 / 0.08);
+  /* ——— Vert — marque, CTA, « moins cher » ——— */
+  --green-500: #5E9962;
+  --green-600: #4D8451;
+  --green-700: #3D6B40;
+  --green-800: #2E5231;
+
+  /* ——— Fonds chauds ——— */
+  --bg: #FAF7F2;         /* fond de page crème */
+  --surface: #FFFDF9;    /* cartes, presque blanc chaud */
+  --slate-100: #F5F0EA;  /* survol, pistes de segmented control */
+
+  /* ——— Texte — bruns chauds, jamais de gris bleuté ———
+     Contrastes mesurés sur --surface en clair :
+       --text-900 13,4:1 · --text-700 6,1:1  → corps de texte, AA ;
+       --text-500  3,9:1                     → texte SECONDAIRE de GRANDE
+                                               taille uniquement (≥ 18,66px
+                                               gras / ≥ 24px) ;
+       --text-400  2,5:1                     → JAMAIS de texte en clair :
+                                               pastilles, séparateurs, états
+                                               désactivés, marqueur « rupture ». */
+  --text-900: #352C24;
+  --text-700: #6B5F53;
+  --text-500: #8A7E72;
+  --text-400: #ADA194;
+
+  /* ——— Terracotta — « plus cher », alertes douces ———
+     --terracotta est une couleur de REMPLISSAGE décorative (marqueurs,
+     clusters, liserés) : sur crème elle ne fait que 3,1:1, et le blanc dessus
+     3,5:1. Pour du TEXTE terracotta, utiliser --terracotta-strong (5,4:1).
+     Pour un fond terracotta PORTANT du texte, utiliser la paire
+     --terracotta-fill / --terracotta-on-fill (5,8:1 clair, 6,6:1 sombre). */
+  --terracotta: #C4745B;
+  --terracotta-strong: #9E4F38;
+  --terracotta-bg: #FCF0EC;
+  --terracotta-fill: #9E4F38;
+  --terracotta-on-fill: #FFFFFF;
+
+  --lavender: #B8A9D4;   /* accent tertiaire, usage rare */
+
+  /* ——— Sémantique des marqueurs de prix ———
+     Volontairement IDENTIQUES en clair et en sombre : les marqueurs sont posés
+     sur les tuiles OpenStreetMap, qui restent claires quel que soit le thème. */
+  --marker-cheap: var(--green-500);
+  --marker-cheap-strong: var(--green-600);
+  --marker-exp: var(--terracotta);
+  --marker-rupture: var(--text-400);
+
+  /* ——— Rayons ———
+     La pilule (9999px) est le rayon le plus fréquent de la référence. */
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 24px;
+  --r-pill: 9999px;
+
+  /* ——— Ombres — teintées brun, jamais noir pur ——— */
+  --shadow-sm: 0 1px 3px rgba(53, 44, 36, .08), 0 1px 2px rgba(53, 44, 36, .06);
+  --shadow-md: 0 4px 16px rgba(53, 44, 36, .1), 0 2px 6px rgba(53, 44, 36, .06);
+  --shadow-lg: 0 12px 32px rgba(53, 44, 36, .16), 0 4px 10px rgba(53, 44, 36, .08);
+
+  --grad-primary: linear-gradient(135deg, var(--green-700), var(--green-500));
+
+  /* ——— Plans (z-index) ———
+     Leaflet monte ses contrôles jusqu'à z-index:1000 : tout overlay applicatif
+     posé sur la carte doit passer AU-DESSUS. Utiliser ces tokens plutôt que
+     des valeurs en dur. */
+  --z-overlay: 1100;   /* header flottant, barre d'onglets, cartes en overlay */
+  --z-modal: 1150;     /* feuilles/dialogues au-dessus des overlays */
+  --z-skip: 1200;      /* skip-link : toujours le plus haut */
+
+  /* ——— Gouttières de mise en page ———
+     Renseignées par app.vue selon la route ; valeurs de repli ici pour que les
+     composants puissent s'en servir sans dépendre du shell.
+     --header-h : place occupée EN HAUT du viewport par le header flottant
+                  (0 quand le header est dans le flux).
+     --nav-h    : place occupée EN BAS par la barre d'onglets flottante. */
+  --header-h: 0px;
+  --nav-h: 0px;
+
+  /* ═════════ Alias de compatibilité ═════════
+     Noms historiques utilisés par les 12 composants et les 4 pages. Ils sont
+     conservés et remappés sur la palette chaude : ne pas les supprimer sans
+     migrer tous les appelants.
+
+     Note AA sur --accent : le blanc sur --green-600 ne fait que 4,44:1, juste
+     sous le seuil AA de 4,5:1. --accent (tout fond portant du TEXTE BLANC)
+     vise donc --green-700 (6,2:1). --brand reste --green-600 pour les usages
+     décoratifs (liserés, pastilles, dégradés) où le contraste texte ne
+     s'applique pas. */
+  --brand: var(--green-600);
+  --accent: var(--green-700);
+  --accent-hover: var(--green-800);
+  --accent-contrast: #FFFFFF;
+  --accent-bg: #EDF3EC;         /* fond vert très pâle, pour les états doux */
+  --text: var(--text-900);
+  --text-muted: var(--text-700);
+  --surface-raised: var(--slate-100);
+  /* --border : trait décoratif (séparateurs, contours de carte) — faible
+     contraste assumé. --border-strong : contour d'un CONTRÔLE dont la bordure
+     est le seul indice visuel (champ de saisie, .btn-secondary) — ≥ 3:1 sur
+     --bg, --surface et --slate-100 (WCAG 1.4.11). */
+  --border: #E7DFD5;
+  --border-strong: #90816C;
+  --focus: var(--green-700);
+  --positive: var(--green-800);
+  --negative: var(--terracotta-strong);
+  --shadow-soft: var(--shadow-sm);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   2. TOKENS — thème sombre (bruns très sombres : on garde la CHALEUR,
+      surtout pas de bleu-nuit)
+   ═════════════════════════════════════════════════════════════════════════ */
 html.dark {
-  --bg: #111827;
-  --surface: #1f2937;
-  --surface-raised: #2d3748;
-  --text: #f3f4f6;
-  --text-muted: #d1d5db;
-  --border: #4b5563;
-  --accent: #3b82f6;
-  --accent-hover: #2563eb;
-  --accent-contrast: #0f172a;
-  --focus: #93c5fd;
-  --positive: #4ade80;
-  --shadow-soft: 0 1px 3px rgb(0 0 0 / 0.4);
+  --bg: #1C1815;
+  --surface: #26211D;
+  --slate-100: #322B26;
+
+  --text-900: #F5F0EA;
+  --text-700: #D6CCC0;
+  --text-500: #ADA194;
+  --text-400: #8A7E72;
+
+  /* Terracotta éclaircie : #C4745B sur #26211D ne passe pas en texte. Le fond
+     terracotta devient clair, donc le texte posé dessus devient sombre. */
+  --terracotta: #D98C72;
+  --terracotta-strong: #F0B49E;
+  --terracotta-bg: #3A2A24;
+  --terracotta-fill: #D98C72;
+  --terracotta-on-fill: #241610;
+
+  --lavender: #C9BDE0;
+
+  /* Les --marker-* ne sont PAS redéfinis : voir le commentaire en clair. */
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, .45), 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .35);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, .6), 0 4px 10px rgba(0, 0, 0, .4);
+
+  /* En sombre, un vert foncé disparaîtrait dans le fond : on remonte à
+     --green-500 et on inverse le texte (brun très sombre sur vert : 5,2:1). */
+  --brand: var(--green-500);
+  --accent: var(--green-500);
+  --accent-hover: #74A878;
+  --accent-contrast: #16120F;
+  --accent-bg: #242E23;
+  --border: #3D352E;
+  --border-strong: #827567;
+  --focus: #8FC293;
+  --positive: #8FC293;
+  --negative: var(--terracotta-strong);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   3. RESET / BASE
+   ═════════════════════════════════════════════════════════════════════════ */
 * {
   box-sizing: border-box;
 }
@@ -48,8 +197,9 @@ body {
   margin: 0;
   font-family: var(--font-sans);
   background: var(--bg);
-  color: var(--text);
+  color: var(--text-900);
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
@@ -59,6 +209,8 @@ a {
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -66,6 +218,17 @@ input:focus-visible,
 
 button {
   font-family: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 .sr-only {
@@ -80,25 +243,113 @@ button {
   border: 0;
 }
 
-/* ——— Boutons (cibles ≥ 44 px, NFR-RES-2) ——— */
-.btn {
+/* ═══════════════════════════════════════════════════════════════════════════
+   4. PRIMITIVES — surfaces
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* .card — bloc de contenu posé sur le fond de page (listes, formulaires,
+   fiches station). Surface + --r-lg + --shadow-sm. */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 1rem;
+}
+
+/* .overlay-card — bloc qui FLOTTE au-dessus de la carte (légende, compteur,
+   fiche station en overlay). Ombre plus marquée, pas de bordure : c'est
+   l'ombre qui le détache des tuiles. Pense à `z-index: var(--z-overlay)`. */
+.overlay-card {
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md);
+  padding: 0.75rem 0.9rem;
+}
+
+/* .pill — conteneur en pilule, non cliquable (badge « ★ Recommandée »,
+   compteur « ⛽ 9 801 stations », étiquette de marque). Voir les modificateurs
+   .pill-accent / .pill-terracotta / .pill-muted / .pill-outline. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--text-900);
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.pill-raised {
+  box-shadow: var(--shadow-md);
+}
+
+.pill-accent {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.pill-terracotta {
+  background: var(--terracotta-fill);
+  color: var(--terracotta-on-fill);
+}
+
+.pill-muted {
+  background: var(--slate-100);
+  color: var(--text-700);
+}
+
+.pill-outline {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-700);
+}
+
+/* .badge-dot — pastille ronde de légende (« ● Moins cher »). La couleur se
+   pilote par `color` sur l'élément parent, ou via une classe utilitaire :
+   <span class="badge-dot" style="color: var(--marker-cheap)"></span> */
+.badge-dot {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5. PRIMITIVES — boutons (cibles ≥ 44 px, NFR-RES-2)
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* .btn — base commune. Désormais en PILULE (le rayon dominant de la
+   référence) et sur le vert de marque. .btn-pill est un alias explicite pour
+   les cas où l'on veut la forme sans la sémantique de bouton. */
+.btn,
+.btn-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.45rem;
   min-height: 44px;
-  padding: 0.6rem 1.1rem;
-  border-radius: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  border-radius: var(--r-pill);
+  font-family: inherit;
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
   text-decoration: none;
 }
 
 .btn-primary {
   background: var(--accent);
   color: var(--accent-contrast);
+  box-shadow: var(--shadow-sm);
 }
 .btn-primary:hover {
   background: var(--accent-hover);
@@ -110,11 +361,15 @@ button {
 
 .btn-secondary {
   background: var(--surface);
-  color: var(--text);
-  border-color: var(--border);
+  color: var(--text-900);
+  border-color: var(--border-strong);
 }
 .btn-secondary:hover {
-  background: var(--surface-raised);
+  background: var(--slate-100);
+}
+.btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .btn-ghost {
@@ -123,10 +378,120 @@ button {
   border-color: transparent;
 }
 .btn-ghost:hover {
-  background: var(--surface-raised);
+  background: var(--slate-100);
 }
 
-/* ——— Zone de liste des stations (ticket 011) ——— */
+/* .fab — bouton d'action flottant sur la carte (recentrage ◎, zoom +/−,
+   véhicule). Disque blanc ≥ 44 px, ombre --shadow-md, pas de bordure. */
+.fab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-900);
+  font-family: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition: background-color 0.15s, transform 0.15s;
+}
+.fab:hover {
+  background: var(--slate-100);
+}
+.fab:active {
+  transform: scale(0.96);
+}
+.fab:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* .fab-accent — variante verte, pour l'action primaire de la carte. */
+.fab-accent {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+.fab-accent:hover {
+  background: var(--accent-hover);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   6. PRIMITIVE — segmented control (sélecteur de carburant)
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* Piste : pilule blanche. Onglet actif : pilule verte pleine, texte blanc.
+   Onglets inactifs : texte --text-700, pas de fond. Défile horizontalement en
+   mobile sans afficher de barre de défilement.
+
+   Markup attendu (les rôles ARIA restent à la charge du composant) :
+     <div class="segmented" role="tablist">
+       <button class="segmented-tab segmented-tab-active">Gazole</button>
+       <button class="segmented-tab">SP95-E10</button>
+       …
+     </div> */
+.segmented {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.25rem;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+.segmented::-webkit-scrollbar {
+  display: none;
+}
+
+/* Variante discrète : posée dans une page (pas sur la carte), sans ombre. */
+.segmented-inset {
+  background: var(--slate-100);
+  box-shadow: none;
+}
+
+.segmented-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-height: 44px;
+  padding: 0 1rem;
+  border: none;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-700);
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+.segmented-tab:hover {
+  background: var(--slate-100);
+  color: var(--text-900);
+}
+
+.segmented-tab-active,
+.segmented-tab-active:hover {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   7. Zone de liste des stations (ticket 011)
+   ═════════════════════════════════════════════════════════════════════════ */
 .stations-area {
   margin-top: 1.25rem;
 }

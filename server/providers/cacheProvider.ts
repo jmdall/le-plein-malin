@@ -74,6 +74,8 @@ export function createCacheProvider(
           id: stations.id,
           name: stations.name,
           brand: stations.brand,
+          brandWikidataId: stations.brandWikidataId,
+          logoUrl: stations.logoUrl,
           address: stations.address,
           city: stations.city,
           postalCode: stations.postalCode,
@@ -113,7 +115,9 @@ export function createCacheProvider(
           position,
           fuel: query.fuel as FuelType,
           price: row.price,
-          updatedAt: row.updatedAt
+          updatedAt: row.updatedAt,
+          brandWikidataId: row.brandWikidataId,
+          logoUrl: row.logoUrl
         })
       }
 

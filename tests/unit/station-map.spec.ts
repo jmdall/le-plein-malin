@@ -66,9 +66,27 @@ describe('buildStationMapView (ticket 012)', () => {
     expect(a?.lat).toBe(48.86)
     expect(a?.lon).toBe(2.34)
   })
+
+  it('portent le logo validé (https, wikimedia) et rejettent les URL arbitraires (021)', () => {
+    const ok = 'https://upload.wikimedia.org/wikipedia/commons/e/ed/logo.svg'
+    const evil = 'https://evil.example.com/x.png'
+    const view = buildStationMapView(
+      [
+        station('a', { brand: 'Total', logoUrl: ok }),
+        station('b', { brand: 'Total', logoUrl: evil }),
+        station('c', { brand: null, logoUrl: null })
+      ],
+      null,
+      null
+    )
+    const byId = (id: string) => view.markers.find((m) => m.id === id)!
+    expect(byId('a').logoUrl).toBe(ok)
+    expect(byId('b').logoUrl).toBeNull()
+    expect(byId('c').logoUrl).toBeNull()
+  })
 })
 
-describe('buildPopupHtml (ticket 012)', () => {
+describe('buildPopupHtml (ticket 012 + 021)', () => {
   const marker = buildStationMapView([station('a')], null, { lat: 48.86, lon: 2.34 }).markers[0]!
 
   it('contient nom, prix, distance, fraîcheur et lien itinéraire OSM', () => {
@@ -81,6 +99,22 @@ describe('buildPopupHtml (ticket 012)', () => {
     expect(html).toContain('https://www.openstreetmap.org/directions')
     // Aucun service payant (NFR-SEC-3).
     expect(html).not.toMatch(/google|mapbox|tomtom|here\.com/i)
+  })
+
+  it('affiche l’enseigne et son logo dans la popup quand disponibles (021)', () => {
+    const branded = station('t', { brand: 'TotalEnergies' })
+    const marker2 = buildStationMapView([branded], null, null).markers[0]!
+    const html = buildPopupHtml(marker2)
+    expect(html).toContain('TotalEnergies')
+    // Pas de logo fourni : repli initiale, jamais d'<img> cassé ni d'id.
+    expect(html).not.toContain('<img')
+    expect(html).toContain('>T</span>')
+  })
+
+  it('sans enseigne, la popup ne mentionne ni brand ni logo', () => {
+    const marker2 = buildStationMapView([station('b', { brand: null })], null, null).markers[0]!
+    const html = buildPopupHtml(marker2)
+    expect(html).not.toContain('map-popup-brand')
   })
 
   it('échappe le HTML injecté par le nom de station (pas de XSS)', () => {

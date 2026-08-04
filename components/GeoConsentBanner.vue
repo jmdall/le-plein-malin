@@ -1,8 +1,11 @@
 <script setup lang="ts">
-// GeoConsentBanner — Bannière de consentement géolocalisation (ticket 010,
-// LOC-1 : recommandée, NON bloquante — refuser n'empêche pas l'usage).
-// Le consentement est mémorisé localement ; si l'utilisateur refuse, la
-// recherche par ville / code postal reste disponible.
+// GeoConsentBanner — Carte flottante discrète de consentement géolocalisation
+// (ticket 010, LOC-1 : recommandée, NON bloquante — refuser n'empêche pas
+// l'usage ; écran carte plein viewport, docs/design/ui-reference.md). Posée
+// au-dessus de la carte sans jamais la recouvrir entièrement : largeur
+// bornée, dismissible. Le consentement est mémorisé localement ; si
+// l'utilisateur refuse, la recherche par ville / code postal reste
+// disponible.
 import { ref } from 'vue'
 
 defineProps<{
@@ -12,6 +15,7 @@ defineProps<{
 const emit = defineEmits<{
   accept: []
   refuse: []
+  dismiss: []
 }>()
 
 const isVisible = ref(true)
@@ -28,6 +32,7 @@ function refuse() {
 
 function dismiss() {
   isVisible.value = false
+  emit('dismiss')
 }
 </script>
 
@@ -60,26 +65,57 @@ function dismiss() {
 
 <style scoped>
 .consent-banner {
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  position: fixed;
+  left: 0.75rem;
+  right: 0.75rem;
+  /* --sheet-peek (posée sur .map-page, pages/index.vue) : hauteur actuelle de
+     la bottom sheet, héritée via les custom properties CSS — sans ça, la
+     bannière se retrouverait sous la feuille (opaque), donc invisible. */
+  bottom: calc(var(--nav-h) + var(--sheet-peek, 0px) + 0.75rem);
+  /* Garde-fou : la bannière ne doit jamais remonter sous le header/recherche
+     (en mobile la feuille est repliée quand elle est visible, voir
+     pages/index.vue, mais sur des écrans très courts le contenu pourrait
+     déborder). 7rem = recherche (44 px) + espace (8 px) + carburant (~52 px),
+     la pile d'overlays du haut au-dessous de --header-h. */
+  top: calc(var(--header-h) + 7.25rem);
+  overflow-y: auto;
+  z-index: var(--z-modal);
+  max-width: 26rem;
+  margin: 0 auto;
+  border-radius: var(--r-lg);
   background: var(--surface);
-  padding: 1rem 1.25rem;
+  box-shadow: var(--shadow-lg);
+  padding: 0.9rem 1.1rem;
   display: grid;
-  gap: 0.75rem;
+  gap: 0.6rem;
 }
 .consent-title {
-  font-size: 1.05rem;
+  font-size: 0.98rem;
   margin: 0;
 }
 .consent-text {
   margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.5;
-  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-700);
 }
 .consent-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+@media (min-width: 1024px) {
+  /* Centrée dans l'espace libre à droite du panneau latéral (23 rem + marge),
+     à distance de la légende (bas-gauche) et du FAB + zoom (bas-droite). */
+  .consent-banner {
+    left: calc(50% + 12rem);
+    right: auto;
+    top: auto;
+    bottom: calc(var(--nav-h) + 1.5rem);
+    transform: translateX(-50%);
+    margin: 0;
+    overflow: visible;
+  }
 }
 </style>

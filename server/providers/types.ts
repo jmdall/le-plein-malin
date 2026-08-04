@@ -47,3 +47,31 @@ export interface FuelPriceProvider {
   readonly name: string
   findNearbyStations(query: NearbyStationQuery): Promise<ProviderResult>
 }
+
+// ——— Métadonnées d'identité (ticket 018, provider OSM) ———
+// Le flux officiel ne publie ni nom réel ni enseigne ni logo ; OSM les fournit
+// via `ref:FR:prix-carburants` (= id officiel, matching 1:1). Uniquement de
+// l'IDENTITÉ : aucun prix ici (019 applique ces métadonnées aux StationPrice).
+
+// Licence de la source de métadonnées (attribution exigée — affichage UI 021).
+export const OSM_METADATA_SOURCE_NAME = 'OpenStreetMap (ODbL)'
+
+// Résultat du provider de métadonnées : les champs d'identité résolus, par id
+// DGCCRF. Chaque champ est nullable : la résolution est best-effort.
+export interface StationMetadata {
+  id: string
+  name: string | null
+  brand: string | null
+  brandWikidataId: string | null
+  logoUrl: string | null
+}
+
+// Abstraction d'un fournisseur de métadonnées d'identité (même philosophie
+// qu'un FuelPriceProvider — ADR-0003) : tolérance aux pannes (retour vide
+// plutôt qu'une erreur), matching 1:1 par id DGCCRF.
+export interface StationMetadataProvider {
+  readonly name: string
+  // Source réelle (nom/licence) pour l'attribution affichée à l'utilisateur.
+  readonly sourceName: string
+  findMetadataFor(stationIds: string[]): Promise<StationMetadata[]>
+}

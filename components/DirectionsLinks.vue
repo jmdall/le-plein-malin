@@ -22,7 +22,7 @@ const links = computed(() => buildDirectionsLinks(props.position))
       rel="noopener noreferrer"
       class="btn btn-secondary station-directions"
     >
-      Itinéraire
+      <span aria-hidden="true">↗</span> Itinéraire
     </a>
     <a
       :href="links.waze"
@@ -32,7 +32,7 @@ const links = computed(() => buildDirectionsLinks(props.position))
       aria-label="Ouvrir l’itinéraire dans Waze"
       title="Waze"
     >
-      Waze
+      <span aria-hidden="true">↗</span> Waze
     </a>
     <a
       :href="links.googleMaps"
@@ -42,7 +42,7 @@ const links = computed(() => buildDirectionsLinks(props.position))
       aria-label="Ouvrir l’itinéraire dans Google Maps"
       title="Google Maps"
     >
-      Maps
+      <span aria-hidden="true">↗</span> Maps
     </a>
   </span>
 </template>
@@ -58,16 +58,18 @@ const links = computed(() => buildDirectionsLinks(props.position))
   min-height: 44px;
   display: inline-flex;
   align-items: center;
-  padding: 0 0.8rem;
+  gap: 0.3rem;
+  padding: 0 0.9rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--r-pill);
   background: var(--surface);
-  color: var(--text);
+  color: var(--text-700);
   font-size: 0.85rem;
+  font-weight: 600;
   text-decoration: none;
 }
 .directions-alt:hover {
-  background: var(--surface-raised);
+  background: var(--slate-100);
 }
 .directions-alt:focus-visible {
   outline: 2px solid var(--focus);

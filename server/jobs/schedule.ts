@@ -5,7 +5,7 @@
 // tick est journalisé sans faire tomber le serveur (retentative au tick
 // suivant). Retourne une fonction d'arrêt (clearInterval).
 import type { Db } from '../db/client'
-import type { FuelPriceProvider } from '../providers/types'
+import type { FuelPriceProvider, StationMetadataProvider } from '../providers/types'
 import { createSyncPricesJob } from './syncPrices'
 
 export const DEFAULT_SYNC_INTERVAL_HOURS = 2
@@ -21,6 +21,9 @@ export function parseSyncIntervalHours(value: string | undefined): number {
 export interface ScheduleSyncOptions {
   db: Db
   provider: FuelPriceProvider
+  // Enrichissement d'identité (ticket 019) : provider OSM (018). Optionnel —
+  // injecté par le plugin (défaut) ; fourni par les tests pour être déterministe.
+  metadataProvider?: StationMetadataProvider
   // Intervalle en heures (défaut : SYNC_INTERVAL_HOURS ?? 2).
   intervalHours?: number
   // Journalise les erreurs de tick (jamais de coordonnées).
@@ -32,7 +35,11 @@ export function scheduleSyncPrices(options: ScheduleSyncOptions): () => void {
   const intervalHours = options.intervalHours ?? parseSyncIntervalHours(process.env.SYNC_INTERVAL_HOURS)
   // Les échecs par carburant sont internes au job (tolérance à l'échec
   // partiel) ; onError est appelé une seule fois par tick en échec global.
-  const job = createSyncPricesJob({ db: options.db, provider: options.provider })
+  const job = createSyncPricesJob({
+    db: options.db,
+    provider: options.provider,
+    metadataProvider: options.metadataProvider
+  })
 
   // Premier tick différé : le démarrage n'est jamais bloqué par la synchro.
   const tick = async () => {

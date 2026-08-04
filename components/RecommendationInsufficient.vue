@@ -14,8 +14,8 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <section class="insufficient-card" data-testid="insufficient-data" role="note">
-    <h2 class="insufficient-title">Données insuffisantes</h2>
+  <section class="insufficient-card card" data-testid="insufficient-data" role="note">
+    <p class="pill pill-outline insufficient-badge">Données insuffisantes</p>
     <p v-for="(reason, i) in recommendation.reasons" :key="`reason-${i}`" class="insufficient-reason">
       {{ reason }}
     </p>
@@ -43,26 +43,24 @@ const emit = defineEmits<{
 <style scoped>
 .insufficient-card {
   display: grid;
-  gap: 0.5rem;
-  padding: 1rem 1.25rem;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  background: var(--surface);
+  gap: 0.45rem;
+  padding: 0.85rem 1rem;
 }
-.insufficient-title {
+.insufficient-badge {
   margin: 0;
-  font-size: 1.15rem;
+  align-self: start;
+  font-size: 0.78rem;
 }
 .insufficient-reason {
   margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.5;
-  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--text-700);
 }
 .insufficient-suggest {
   margin: 0;
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 .insufficient-actions {
   display: flex;
@@ -71,12 +69,12 @@ const emit = defineEmits<{
   gap: 0.5rem;
 }
 .insufficient-hint {
-  font-size: 0.85rem;
-  color: var(--text-muted);
+  font-size: 0.82rem;
+  color: var(--text-700);
 }
 .insufficient-ignored {
   margin: 0;
-  font-size: 0.85rem;
-  color: var(--text-muted);
+  font-size: 0.82rem;
+  color: var(--text-700);
 }
 </style>

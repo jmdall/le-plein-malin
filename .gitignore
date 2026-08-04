@@ -34,6 +34,9 @@ logs
 test-results/
 playwright-report/
 
+# Scripts scratch de captures (screenshots worker UI)
+.capture-*.mjs
+
 # OS / editor
 .vscode/
 

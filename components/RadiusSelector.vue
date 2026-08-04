@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // RadiusSelector — Sélecteur de rayon (ticket 010, LOC-3 : 5/10/20/30 km,
-// défaut 10). Contrôles tactiles ≥ 44 px (NFR-RES-2), focus visible.
+// défaut 10). Même langage que le segmented control carburant (.segmented du
+// socle), en variante compacte « dans une page » (.segmented-inset : pas de
+// carte dessous). Contrôles tactiles ≥ 44 px (NFR-RES-2), focus visible.
 defineProps<{
   modelValue: number
   options: number[]
@@ -14,12 +16,12 @@ const emit = defineEmits<{
 <template>
   <fieldset class="radius-fieldset">
     <legend class="radius-legend">Rayon de recherche</legend>
-    <div class="radius-group">
+    <div class="segmented segmented-inset radius-group" role="radiogroup" aria-label="Rayon de recherche">
       <label
         v-for="opt in options"
         :key="opt"
-        class="radius-option"
-        :class="{ active: modelValue === opt }"
+        class="segmented-tab radius-option"
+        :class="{ 'segmented-tab-active': modelValue === opt }"
       >
         <input
           :checked="modelValue === opt"
@@ -29,7 +31,7 @@ const emit = defineEmits<{
           :value="opt"
           @change="emit('update:modelValue', opt)"
         >
-        <span class="radius-label">{{ opt }} km</span>
+        {{ opt }} km
       </label>
     </div>
   </fieldset>
@@ -41,49 +43,24 @@ const emit = defineEmits<{
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.4rem;
+  gap: 0.35rem;
 }
 .radius-legend {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  color: var(--text-muted);
-  margin-bottom: 0.25rem;
+  color: var(--text-700);
 }
 .radius-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  width: 100%;
+  justify-content: space-between;
 }
 .radius-option {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 3.5rem;
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  cursor: pointer;
-  transition: background-color 0.15s, border-color 0.15s;
+  padding: 0 0.6rem;
 }
 .radius-option:focus-within {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
-}
-.radius-option:hover {
-  background: var(--surface-raised);
-}
-.radius-option.active {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-.radius-option.active .radius-label {
-  color: var(--accent-contrast);
-  font-weight: 600;
-}
-.radius-label {
-  color: var(--text);
-  font-size: 0.9rem;
 }
 </style>

@@ -29,9 +29,11 @@ test('la page profil se charge et préremplit le formulaire', async ({ page }) =
   await expect(page.getByRole('heading', { name: 'Profil du véhicule' })).toBeVisible()
 
   // Le formulaire est prérempli depuis GET /api/vehicle-profile.
-  await expect(page.getByLabel('Consommation (L/100 km)')).toHaveValue('6.5')
-  await expect(page.getByLabel('Capacité du réservoir (L)')).toHaveValue('55')
-  await expect(page.getByLabel('Niveau actuel du réservoir (L)')).toHaveValue('22')
+  // Les unités (L/100 km, L, km, €) sont affichées en suffixe visuel à côté du
+  // champ plutôt que dans le texte du libellé (docs/design/ui-reference.md).
+  await expect(page.getByLabel('Consommation')).toHaveValue('6.5')
+  await expect(page.getByLabel('Capacité du réservoir')).toHaveValue('55')
+  await expect(page.getByLabel('Niveau actuel du réservoir')).toHaveValue('22')
   await expect(page.getByRole('radio', { name: 'Gazole' })).toBeChecked()
 })
 
@@ -49,8 +51,8 @@ test('le profil se sauvegarde avec un PUT', async ({ page }) => {
   await page.goto('/profil')
   await page.waitForLoadState('networkidle')
 
-  await page.getByLabel('Consommation (L/100 km)').fill('7')
-  await page.getByLabel('Seuil minimal d’économie pour un détour (€)').fill('2')
+  await page.getByLabel('Consommation').fill('7')
+  await page.getByLabel('Seuil de rentabilité').fill('2')
 
   await page.getByRole('button', { name: 'Enregistrer le profil' }).click()
 

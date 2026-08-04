@@ -10,7 +10,7 @@ import { createSyncPricesJob, OBSOLETE_AFTER_HOURS } from '../../server/jobs/syn
 import { createStationsRepository } from '../../server/repositories/stations'
 import { createPricesRepository } from '../../server/repositories/prices'
 import { createPriceHistoryRepository } from '../../server/repositories/priceHistory'
-import type { FuelPriceProvider, ProviderResult } from '../../server/providers/types'
+import type { FuelPriceProvider, ProviderResult, StationMetadataProvider, StationMetadata } from '../../server/providers/types'
 import type { StationPrice, FuelType } from '../../domain/fuel-prices/types'
 
 // ——— Provider simulé : retourne un état par appel, indexé par fuel ———
@@ -58,6 +58,31 @@ function makeProvider(state: SimulatedState, failFuels: FuelType[] = []): FuelPr
   }
 }
 
+// ——— Provider de métadonnées simulé (ticket 019) ———
+// Le job enrichit les stations après l'upsert : OSM d'abord, repli dérivation
+// adresse (017), sinon nom par défaut = id. Chaque test choisit sa résolution.
+// Le « noop » (aucun enrichissement) préserve le comportement historique du job
+// (ticket 008) : nom = id, brand = null.
+function makeNoopMetadataProvider(): StationMetadataProvider {
+  return { name: 'osm-metadata', sourceName: 'OpenStreetMap (ODbL)', findMetadataFor: async () => [] }
+}
+
+function makeMetadataProvider(metas: StationMetadata[]): StationMetadataProvider {
+  return { name: 'osm-metadata', sourceName: 'OpenStreetMap (ODbL)', findMetadataFor: async () => metas }
+}
+
+// Provider OSM qui échoue (source indisponible) : le job doit rester tolérant
+// (repli dérivation adresse / nom par défaut), jamais planter.
+function makeFailingMetadataProvider(): StationMetadataProvider {
+  return {
+    name: 'osm-metadata',
+    sourceName: 'OpenStreetMap (ODbL)',
+    findMetadataFor: async () => {
+      throw new Error('Simulation : Overpass indisponible')
+    }
+  }
+}
+
 let dbHandle: ReturnType<typeof createTestDb> | undefined
 
 afterEach(() => {
@@ -74,7 +99,7 @@ describe('job de synchronisation (ticket 008)', () => {
   it('run à vide : aucun prix reçu → rien n\'est écrit, la base reste cohérente', async () => {
     const { db } = setup()
     const provider = makeProvider({})
-    const job = createSyncPricesJob({ db, provider })
+    const job = createSyncPricesJob({ db, provider, metadataProvider: makeNoopMetadataProvider() })
 
     // La source est joignable mais ne renvoie aucun prix : aucune écriture,
     // résultat « vide » explicite, pas de crash.
@@ -97,7 +122,7 @@ describe('job de synchronisation (ticket 008)', () => {
     const now = new Date('2026-08-03T12:00:00Z')
     const today = () => new Date('2026-08-03T00:00:00Z')
     const allFail = makeProvider({}, ['Gazole', 'SP95', 'SP98', 'E10', 'E85', 'GPLc'])
-    const job = createSyncPricesJob({ db, provider: allFail, now: () => now, today })
+    const job = createSyncPricesJob({ db, provider: allFail, now: () => now, today, metadataProvider: makeNoopMetadataProvider() })
 
     await expect(job.run()).rejects.toThrow(/Aucune source disponible/)
 
@@ -116,7 +141,7 @@ describe('job de synchronisation (ticket 008)', () => {
     const today = () => new Date(day + 'T00:00:00Z')
     const state: SimulatedState = { Gazole: [makeStation('1', 'Gazole', { price: 2.1 })] }
 
-    const job = createSyncPricesJob({ db, provider: makeProvider(state), now: () => now, today })
+    const job = createSyncPricesJob({ db, provider: makeProvider(state), now: () => now, today, metadataProvider: makeNoopMetadataProvider() })
 
     const first = await job.run()
     expect(first.stationsSynced).toBe(1)
@@ -153,7 +178,8 @@ describe('job de synchronisation (ticket 008)', () => {
       db,
       provider: makeProvider(state),
       now: () => now,
-      today: () => currentDay
+      today: () => currentDay,
+      metadataProvider: makeNoopMetadataProvider()
     })
 
     await job.run()
@@ -179,12 +205,12 @@ describe('job de synchronisation (ticket 008)', () => {
     const state: SimulatedState = { Gazole: [makeStation('1', 'Gazole')] }
 
     // Premier run : tout fonctionne.
-    const job = createSyncPricesJob({ db, provider: makeProvider(state), now: () => now, today })
+    const job = createSyncPricesJob({ db, provider: makeProvider(state), now: () => now, today, metadataProvider: makeNoopMetadataProvider() })
     await job.run()
 
     // Deuxième run : E10 échoue (source KO). Gazole continue de fonctionner.
     const failingProvider = makeProvider(state, ['E10'])
-    const job2 = createSyncPricesJob({ db, provider: failingProvider, now: () => now, today })
+    const job2 = createSyncPricesJob({ db, provider: failingProvider, now: () => now, today, metadataProvider: makeNoopMetadataProvider() })
     const result = await job2.run()
     expect(result.skippedFuels).toEqual(['E10'])
     // Gazole reste intact et a été resynchronisé.
@@ -197,7 +223,7 @@ describe('job de synchronisation (ticket 008)', () => {
 
     // Échec de TOUS les fuels → erreur explicite, aucune écriture.
     const allFail = makeProvider(state, ['Gazole', 'SP95', 'SP98', 'E10', 'E85', 'GPLc'])
-    const job3 = createSyncPricesJob({ db, provider: allFail, now: () => now, today })
+    const job3 = createSyncPricesJob({ db, provider: allFail, now: () => now, today, metadataProvider: makeNoopMetadataProvider() })
     await expect(job3.run()).rejects.toThrow(/Aucune source disponible/)
     expect(await pricesRepo.count()).toBe(1)
   })
@@ -221,7 +247,7 @@ describe('job de synchronisation (ticket 008)', () => {
         })
       ]
     }
-    const job = createSyncPricesJob({ db, provider: makeProvider(state), now: () => now, today })
+    const job = createSyncPricesJob({ db, provider: makeProvider(state), now: () => now, today, metadataProvider: makeNoopMetadataProvider() })
     const result = await job.run()
     // La purge neutralise 1 prix obsolète (72 h > 48 h) → rupture=true.
     expect(result.obsoleteNeutralized).toBe(1)
@@ -248,7 +274,7 @@ describe('job de synchronisation (ticket 008)', () => {
     // l'intérieur de la transaction en fermant la connexion sous-jacente :
     // la transaction rollback → aucune station/prix/historique ne subsiste.
     const state: SimulatedState = { Gazole: [makeStation('1', 'Gazole')] }
-    const job = createSyncPricesJob({ db, provider: makeProvider(state), now: () => now, today })
+    const job = createSyncPricesJob({ db, provider: makeProvider(state), now: () => now, today, metadataProvider: makeNoopMetadataProvider() })
 
     // Fermer la connexion force le prochain accès SQL à échouer → toute la
     // transaction (stations + prices + history) est annulée.
@@ -265,5 +291,114 @@ describe('job de synchronisation (ticket 008)', () => {
     expect(await pricesRepo.count()).toBe(0)
     expect(await historyRepo.count()).toBe(0)
     reopened.$client.close()
+  })
+})
+
+describe('enrichissement d\'identité à la synchronisation (ticket 019)', () => {
+  it('OSM : applique name, brand, brandWikidataId et logoUrl réels à la station', async () => {
+    const { db } = setup()
+    const now = new Date('2026-08-03T12:00:00Z')
+    const today = () => new Date('2026-08-03T00:00:00Z')
+    const state: SimulatedState = { Gazole: [makeStation('1000001', 'Gazole')] }
+
+    const metadata = makeMetadataProvider([
+      {
+        id: '1000001',
+        name: 'Carrefour Market Bourg-en-Bresse',
+        brand: 'Carrefour Market',
+        brandWikidataId: 'Q867662',
+        logoUrl: 'https://upload.wikimedia.org/commons/e/ed/logo.svg'
+      }
+    ])
+    const job = createSyncPricesJob({ db, provider: makeProvider(state), now: () => now, today, metadataProvider: metadata })
+    const result = await job.run()
+    expect(result.stationsSynced).toBe(1)
+    expect(result.enrichedStations).toBe(1)
+
+    const row = await createStationsRepository(db).findById('1000001')
+    expect(row?.name).toBe('Carrefour Market Bourg-en-Bresse')
+    expect(row?.brand).toBe('Carrefour Market')
+    expect(row?.brandWikidataId).toBe('Q867662')
+    expect(row?.logoUrl).toBe('https://upload.wikimedia.org/commons/e/ed/logo.svg')
+  })
+
+  it('repli dérivation adresse (017) : station non trouvée par OSM → enseigne réelle', async () => {
+    const { db } = setup()
+    const now = new Date('2026-08-03T12:00:00Z')
+    const today = () => new Date('2026-08-03T00:00:00Z')
+    // L'adresse porte « INTERMARCHE » : la dérivation (017) reconnaît une
+    // enseigne réelle. OSM ne trouve rien.
+    const state: SimulatedState = {
+      Gazole: [makeStation('7', 'Gazole', { address: 'INTERMARCHE ROUTE DE LYON', city: 'BOURG-EN-BRESSE' })]
+    }
+
+    const job = createSyncPricesJob({ db, provider: makeProvider(state), now: () => now, today, metadataProvider: makeNoopMetadataProvider() })
+    await job.run()
+
+    const row = await createStationsRepository(db).findById('7')
+    expect(row?.name).toBe('Intermarché')
+    expect(row?.brand).toBe('Intermarché')
+    expect(row?.brandWikidataId).toBeNull()
+    expect(row?.logoUrl).toBeNull()
+  })
+
+  it('sans match OSM ni adresse : nom par défaut = id, brand = null (aucun nom fabriqué)', async () => {
+    const { db } = setup()
+    const now = new Date('2026-08-03T12:00:00Z')
+    const today = () => new Date('2026-08-03T00:00:00Z')
+    const state: SimulatedState = {
+      Gazole: [makeStation('123456', 'Gazole', { address: '12 RUE DE LA GARE', city: 'LYON' })]
+    }
+
+    const job = createSyncPricesJob({ db, provider: makeProvider(state), now: () => now, today, metadataProvider: makeNoopMetadataProvider() })
+    const result = await job.run()
+    // Aucune station enrichie : nom = id, brand = null.
+    expect(result.enrichedStations).toBe(0)
+
+    const row = await createStationsRepository(db).findById('123456')
+    expect(row?.name).toBe('123456')
+    expect(row?.brand).toBeNull()
+    expect(row?.brandWikidataId).toBeNull()
+    expect(row?.logoUrl).toBeNull()
+  })
+
+  it('tolérance : le provider OSM qui échoue ne casse pas le job (repli adresse / id)', async () => {
+    const { db } = setup()
+    const now = new Date('2026-08-03T12:00:00Z')
+    const today = () => new Date('2026-08-03T00:00:00Z')
+    const state: SimulatedState = {
+      Gazole: [makeStation('CARREFOUR-1', 'Gazole', { address: 'CARREFOUR 12 RUE DE LA GARE', city: 'LYON' })]
+    }
+
+    const job = createSyncPricesJob({ db, provider: makeProvider(state), now: () => now, today, metadataProvider: makeFailingMetadataProvider() })
+    const result = await job.run()
+    // Le job tourne quand même ; la dérivation adresse fournit l'enseigne.
+    expect(result.stationsSynced).toBe(1)
+    const row = await createStationsRepository(db).findById('CARREFOUR-1')
+    expect(row?.name).toBe('Carrefour')
+    expect(row?.brand).toBe('Carrefour')
+  })
+
+  it('aucune écriture partielle : sans résolution, l\'upsert conserve le nom précédent', async () => {
+    const { db } = setup()
+    const now = new Date('2026-08-03T12:00:00Z')
+    const today = () => new Date('2026-08-03T00:00:00Z')
+
+    // Premier run : OSM fournit un nom réel.
+    const withOsm = makeMetadataProvider([
+      { id: 'S1', name: 'TotalEnergies Lyon', brand: 'TotalEnergies', brandWikidataId: null, logoUrl: null }
+    ])
+    const state: SimulatedState = { Gazole: [makeStation('S1', 'Gazole')] }
+    let job = createSyncPricesJob({ db, provider: makeProvider(state), now: () => now, today, metadataProvider: withOsm })
+    await job.run()
+
+    // Deuxième run : plus aucun enrichissement (OSM vide). L'upsert doit
+    // conserver le nom réel précédent — on ne remplace jamais un nom par null.
+    job = createSyncPricesJob({ db, provider: makeProvider(state), now: () => now, today, metadataProvider: makeNoopMetadataProvider() })
+    await job.run()
+
+    const row = await createStationsRepository(db).findById('S1')
+    expect(row?.name).toBe('TotalEnergies Lyon')
+    expect(row?.brand).toBe('TotalEnergies')
   })
 })

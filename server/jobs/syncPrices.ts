@@ -5,26 +5,38 @@
 // providers (ADR-0003). Étapes :
 //   1. interroger la chaîne de repli avec un « rayon large France » (centre sur
 //      la France métropolitaine) — jamais un fetch par station (NFR-PERF-2) ;
-//   2. upsert des `stations` et des `prices` (transaction unique : aucune
+//   2. enrichissement des stations (ticket 019) : noms réels / enseigne / logo
+//      via OSM (provider osmMetadata, 018) puis repli dérivation adresse
+//      (module pur 017), sinon nom par défaut = id — aucun nom inventé
+//      (invariant CONTEXT.md) ;
+//   3. upsert des `stations` et des `prices` (transaction unique : aucune
 //      écriture partielle douteuse — ADR-0003) ;
-//   3. append quotidien de `price_history` : un seul snapshot par
+//   4. append quotidien de `price_history` : un seul snapshot par
 //      (station, carburant, jour), upserté — ADR-0004 / TRE-1 ;
-//   4. purge 48 h : les prix dont `prix_maj` est antérieur à 48 h sont
+//   5. purge 48 h : les prix dont `prix_maj` est antérieur à 48 h sont
 //      neutralisés (rupture=true) : exclus des recommandations mais toujours
 //      visibles avec badge (FRE-3, §9.6). La purge ne s'applique qu'aux
 //      carburants réellement synchronisés ce tick : un carburant dont la
 //      source a échoué n'est jamais modifié (tolérance à l'échec partiel).
-//   5. marquage `synced_at` (stations + prices) et de la métadonnée
+//   6. marquage `synced_at` (stations + prices) et de la métadonnée
 //      `last_sync` lue par /api/health (ticket 008).
 //
 // Tolérance à l'échec partiel : si un appel de provider échoue, on garde les
 // données existantes de ce carburant et on retente au prochain tick (aucune
 // écriture partielle douteuse — ADR-0003). Si tous les carburants échouent,
 // rien n'est écrit et une erreur explicite est levée (jamais de prix inventé).
-import { and, eq, lt } from 'drizzle-orm'
+//
+// Enrichissement 019 : best-effort et sans écriture destructrice. Si le
+// provider OSM échoue (tolérance aux pannes : il retourne [] plutôt qu'une
+// exception), on conserve la dérivation adresse puis le nom par défaut (id).
+// L'upsert des colonnes d'enrichissement conserve la valeur PRÉCÉDENTE en base
+// quand la résolution ne donne rien pour cette station (aucune écriture
+// partielle : on ne remplace jamais un nom réel par null).
+import { and, eq, lt, sql } from 'drizzle-orm'
 import type { Db } from '../db/client'
-import type { FuelPriceProvider } from '../providers/types'
+import type { FuelPriceProvider, StationMetadataProvider } from '../providers/types'
 import { FUEL_TYPES, type FuelType, type StationPrice } from '../../domain/fuel-prices/types'
+import { deriveBrandFromAddress } from '../../domain/stations/deriveBrand'
 import { lastSync, priceHistory, prices, stations } from '../db/schema'
 
 // Centre « large France » (métropole) pour la synchronisation complète.
@@ -43,6 +55,11 @@ export function dayKey(date: Date): string {
 export interface SyncPricesOptions {
   db: Db
   provider: FuelPriceProvider
+  // Enrichissement d'identité (ticket 019) : provider OSM (018). Optionnel —
+  // sans lui, les stations gardent leur nom/brand fournis par le provider de
+  // prix (et le repli dérivation adresse n'est pas appliqué). Injecté par le
+  // job périodique (schedule.ts) et le déclencheur manuel (sync.post.ts).
+  metadataProvider?: StationMetadataProvider
   // Horloge injectable pour les tests ; défaut : Date.now.
   now?: () => Date
   // Jour du snapshot (injectable pour tester l'append quotidien) ; défaut : aujourd'hui.
@@ -61,6 +78,64 @@ export interface SyncPricesResult {
   source: string
   syncedAt: Date
   skippedFuels: FuelType[]
+  // Nombre de stations dont l'identité a été enrichie ce tick (OSM ou
+  // dérivation adresse) — diagnostic, jamais un compteur de prix.
+  enrichedStations: number
+}
+
+// Résout l'identité d'une station selon la chaîne de repli (ticket 019) :
+//   1. OSM (métadonnées réelles : name, brand, brandWikidataId, logoUrl) ;
+//   2. repli dérivation adresse (017) pour les stations non trouvées par OSM :
+//      nom + enseigne d'une liste finie de marques réelles ;
+//   3. sinon nom par défaut = id, brand = null (aucun nom fabriqué —
+//      invariant CONTEXT.md).
+// Retourne uniquement les champs d'identité à écrire : jamais de valeurs
+// fabriquées. L'attribution OSM est portée par la constante exportée
+// `OSM_METADATA_SOURCE_NAME` (types.ts), consommée par l'UI en 021.
+export interface ResolvedIdentity {
+  name: string
+  brand: string | null
+  brandWikidataId: string | null
+  logoUrl: string | null
+}
+
+export async function resolveStationIdentities(
+  byId: Map<string, StationPrice>,
+  metadataProvider?: StationMetadataProvider
+): Promise<Map<string, ResolvedIdentity>> {
+  const identities = new Map<string, ResolvedIdentity>()
+
+  // 1. OSM d'abord — requête groupée par id (NFR-PERF-2). Best-effort : un
+  //    échec du provider (ou une source indisponible) → [] (jamais d'erreur).
+  const ids = [...byId.keys()]
+  if (metadataProvider && ids.length > 0) {
+    try {
+      const metas = await metadataProvider.findMetadataFor(ids)
+      for (const meta of metas) {
+        identities.set(meta.id, {
+          name: meta.name ?? meta.id,
+          brand: meta.brand,
+          brandWikidataId: meta.brandWikidataId,
+          logoUrl: meta.logoUrl
+        })
+      }
+    } catch {
+      // Provider OSM en échec : on garde la dérivation adresse / l'id.
+    }
+  }
+
+  // 2. Repli dérivation adresse (017) pour les stations non trouvées par OSM.
+  //    La dérivation est pure et ne fabrique jamais de nom : sans
+  //    correspondance elle retourne null → nom par défaut = id.
+  for (const s of byId.values()) {
+    if (identities.has(s.id)) continue
+    const derived = deriveBrandFromAddress(s.address, s.city)
+    identities.set(s.id, derived
+      ? { name: derived.name, brand: derived.brand, brandWikidataId: null, logoUrl: null }
+      : { name: s.id, brand: null, brandWikidataId: null, logoUrl: null })
+  }
+
+  return identities
 }
 
 export function createSyncPricesJob(options: SyncPricesOptions) {
@@ -111,14 +186,24 @@ export function createSyncPricesJob(options: SyncPricesOptions) {
         obsoleteNeutralized: 0,
         source,
         syncedAt,
-        skippedFuels: skipped.map((s) => s.fuel)
+        skippedFuels: skipped.map((s) => s.fuel),
+        enrichedStations: 0
       }
     }
 
-    // 4. Écriture atomique : une seule transaction. better-sqlite3 exige un
+    // 4. Enrichissement d'identité (ticket 019) : résolution OSM → adresse →
+    //    id AVANT l'écriture, pour renseigner les colonnes dès l'upsert.
+    const stationById = new Map<string, StationPrice>()
+    for (const list of fetched.values()) {
+      for (const s of list) {
+        if (!stationById.has(s.id)) stationById.set(s.id, s)
+      }
+    }
+    const identities = await resolveStationIdentities(stationById, options.metadataProvider)
+    // 5. Écriture atomique : une seule transaction. better-sqlite3 exige un
     //    callback synchrone — on exécute les builders drizzle sans `await`.
     const snapshot = db.transaction((tx) => {
-      return writeSnapshot(tx, fetched, syncedAt, source)
+      return writeSnapshot(tx, fetched, identities, syncedAt, source)
     })
 
     return {
@@ -128,7 +213,8 @@ export function createSyncPricesJob(options: SyncPricesOptions) {
       obsoleteNeutralized: snapshot.obsolete,
       source,
       syncedAt,
-      skippedFuels: skipped.map((s) => s.fuel)
+      skippedFuels: skipped.map((s) => s.fuel),
+      enrichedStations: snapshot.enriched
     }
   }
 
@@ -139,16 +225,23 @@ export function createSyncPricesJob(options: SyncPricesOptions) {
   function writeSnapshot(
     tx: Parameters<Parameters<Db['transaction']>[0]>[0],
     byFuel: Map<FuelType, StationPrice[]>,
+    identities: Map<string, ResolvedIdentity>,
     syncedAt: Date,
     source: string
-  ): { stations: number; prices: number; history: number; obsolete: number } {
+  ): { stations: number; prices: number; history: number; obsolete: number; enriched: number } {
     const day = dayKey(today())
     let stationsSynced = 0
     let pricesSynced = 0
     let historyAppended = 0
     let obsolete = 0
+    let enriched = 0
 
-    // 3a. Upsert des stations (dédupliquées par id, tous carburants confondus).
+    // 5a. Upsert des stations (dédupliquées par id, tous carburants confondus),
+    //     avec les colonnes d'enrichissement. Aucune écriture partielle : les
+    //     champs d'identité non résolus ce tick (`undefined`) conservent la
+    //     valeur précédente en base (on ne remplace jamais un nom réel par
+    //     null). Si la station n'existe pas encore, le nom par défaut = id et
+    //     brand = null (invariant CONTEXT.md).
     const stationById = new Map<string, StationPrice>()
     for (const list of byFuel.values()) {
       for (const s of list) {
@@ -156,11 +249,25 @@ export function createSyncPricesJob(options: SyncPricesOptions) {
       }
     }
     for (const s of stationById.values()) {
+      const identity = identities.get(s.id) ?? {
+        name: s.id,
+        brand: null,
+        brandWikidataId: null,
+        logoUrl: null
+      }
+      // « Identité par défaut » : aucune résolution réelle ce tick (nom = id,
+      // brand = null). Dans ce cas l'upsert CONSERVE la valeur précédente en
+      // base — on ne remplace jamais un nom/enseigne réels par null (aucune
+      // écriture partielle, invariant CONTEXT.md). Un vrai enrichissement
+      // (OSM ou dérivation adresse) écrase toujours les quatre colonnes.
+      const isDefault = identity.name === s.id && identity.brand === null
       tx.insert(stations)
         .values({
           id: s.id,
-          name: s.name,
-          brand: s.brand,
+          name: identity.name,
+          brand: identity.brand,
+          brandWikidataId: identity.brandWikidataId,
+          logoUrl: identity.logoUrl,
           address: s.address,
           city: s.city,
           postalCode: s.postalCode,
@@ -174,8 +281,14 @@ export function createSyncPricesJob(options: SyncPricesOptions) {
         .onConflictDoUpdate({
           target: stations.id,
           set: {
-            name: s.name,
-            brand: s.brand,
+            name: isDefault ? sql`name` : identity.name,
+            brand: isDefault ? sql`brand` : identity.brand,
+            brandWikidataId: isDefault
+              ? sql`brand_wikidata_id`
+              : (identity.brandWikidataId ?? sql`brand_wikidata_id`),
+            logoUrl: isDefault
+              ? sql`logo_url`
+              : (identity.logoUrl ?? sql`logo_url`),
             address: s.address,
             city: s.city,
             postalCode: s.postalCode,
@@ -189,9 +302,11 @@ export function createSyncPricesJob(options: SyncPricesOptions) {
         })
         .run()
       stationsSynced++
+      // Compteur d'enrichissement réel : un nom autre que l'id ou une enseigne.
+      if (identity.name !== s.id || identity.brand !== null) enriched++
     }
 
-    // 3b. Upsert des prix + append quotidien de l'historique (ADR-0004).
+    // 5b. Upsert des prix + append quotidien de l'historique (ADR-0004).
     for (const [fuel, list] of byFuel) {
       for (const s of list) {
         tx.insert(prices)
@@ -233,7 +348,7 @@ export function createSyncPricesJob(options: SyncPricesOptions) {
       }
     }
 
-    // 3c. Purge 48 h : seulement pour les carburants réellement synchronisés
+    // 5c. Purge 48 h : seulement pour les carburants réellement synchronisés
     //     ce tick (un carburant en échec garde ses données, intouchées).
     const cutoff = new Date(syncedAt.getTime() - OBSOLETE_AFTER_HOURS * HOUR_MS)
     for (const fuel of byFuel.keys()) {
@@ -245,7 +360,7 @@ export function createSyncPricesJob(options: SyncPricesOptions) {
       obsolete += result.changes
     }
 
-    // 3d. Métadonnée de synchronisation lue par /api/health. La source réelle
+    // 5d. Métadonnée de synchronisation lue par /api/health. La source réelle
     //     (opendatasoft-api / opendatasoft-export / roulez-eco) permet d'afficher
     //     « données en cache (date) » côté cache (ADR-0003, recherche §13).
     tx.insert(lastSync)
@@ -256,6 +371,6 @@ export function createSyncPricesJob(options: SyncPricesOptions) {
       })
       .run()
 
-    return { stations: stationsSynced, prices: pricesSynced, history: historyAppended, obsolete }
+    return { stations: stationsSynced, prices: pricesSynced, history: historyAppended, obsolete, enriched }
   }
 }

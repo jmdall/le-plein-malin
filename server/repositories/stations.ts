@@ -7,6 +7,8 @@ export interface StationRow {
   id: string
   name: string
   brand: string | null
+  brandWikidataId: string | null
+  logoUrl: string | null
   address: string
   city: string
   postalCode: string
@@ -18,9 +20,18 @@ export interface StationRow {
   syncedAt: Date
 }
 
+// Entrée d'upsert : les colonnes d'enrichissement (017-019) sont optionnelles —
+// les insertions existantes (sync, favoris, tests) compilent sans les fournir.
+// Si absentes, la valeur existante en base est conservée (upsert sans perte).
+export type StationUpsertRow = Omit<StationRow, 'id' | 'brandWikidataId' | 'logoUrl'> & {
+  id: string
+  brandWikidataId?: string | null
+  logoUrl?: string | null
+}
+
 export function createStationsRepository(db: Db) {
   return {
-    async upsert(row: Omit<StationRow, 'id'> & { id: string }): Promise<void> {
+    async upsert(row: StationUpsertRow): Promise<void> {
       await db
         .insert(stations)
         .values(row)
@@ -29,6 +40,8 @@ export function createStationsRepository(db: Db) {
           set: {
             name: row.name,
             brand: row.brand,
+            brandWikidataId: row.brandWikidataId ?? sql`brand_wikidata_id`,
+            logoUrl: row.logoUrl ?? sql`logo_url`,
             address: row.address,
             city: row.city,
             postalCode: row.postalCode,
@@ -42,7 +55,7 @@ export function createStationsRepository(db: Db) {
         })
     },
 
-    async upsertMany(rows: Array<Omit<StationRow, 'id'> & { id: string }>): Promise<void> {
+    async upsertMany(rows: Array<StationUpsertRow>): Promise<void> {
       for (const row of rows) {
         await this.upsert(row)
       }

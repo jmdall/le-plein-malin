@@ -3,6 +3,9 @@
 // /api/recommendation (aucune dépendance réseau réelle).
 import { expect, test } from '@playwright/test'
 
+const PIXEL_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
 const MOCK_RECOMMENDATION = {
   recommendation: {
     type: 'go-to-station',
@@ -12,6 +15,7 @@ const MOCK_RECOMMENDATION = {
       id: 'mock-1',
       name: 'Station Mock Total',
       brand: 'Total',
+      logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/e/ed/logo.svg',
       address: '1 avenue du Test',
       city: 'Paris',
       postalCode: '75001',
@@ -24,6 +28,7 @@ const MOCK_RECOMMENDATION = {
       id: 'mock-ref',
       name: 'Station référence',
       brand: null,
+      logoUrl: null,
       address: '2 rue Ref',
       city: 'Paris',
       postalCode: '75001',
@@ -48,7 +53,7 @@ const MOCK_RECOMMENDATION = {
 test('la page se charge et affiche le formulaire localisation', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: /Je fais le plein ou non/ })).toBeVisible()
-  await expect(page.getByPlaceholder('Ex. : Lyon ou 69001')).toBeVisible()
+  await expect(page.getByPlaceholder('Rechercher une ville, une adresse…')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Rechercher', exact: true })).toBeVisible()
 })
 
@@ -59,6 +64,15 @@ test('la recommandation apparaît après une recherche avec mock API', async ({ 
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(MOCK_RECOMMENDATION)
+    })
+  })
+  // Les logos de marque (upload.wikimedia.org) sont mockés : l'<img> se charge
+  // et reste dans le DOM (sinon onerror le retirerait — voulu, mais hors test).
+  await page.route('https://upload.wikimedia.org/**', (route) => {
+    void route.fulfill({
+      status: 200,
+      contentType: 'image/png',
+      body: Buffer.from(PIXEL_PNG_BASE64, 'base64')
     })
   })
   // La liste des stations est aussi mockée (liste vide) : le test reste
@@ -82,7 +96,7 @@ test('la recommandation apparaît après une recherche avec mock API', async ({ 
   await page.waitForTimeout(1500)
 
   // Recherche par ville sans géolocalisation (LOC-2).
-  await page.getByPlaceholder('Ex. : Lyon ou 69001').fill('Paris')
+  await page.getByPlaceholder('Rechercher une ville, une adresse…').fill('Paris')
   await page.getByRole('button', { name: 'Rechercher', exact: true }).click()
 
   // La recommandation apparaît : titre, station, prix, date, économie nette.
@@ -91,6 +105,11 @@ test('la recommandation apparaît après une recherche avec mock API', async ({ 
   await expect(page.getByText('1,899 €/L')).toBeVisible()
   await expect(page.getByTestId('net-savings')).toContainText('5,62 €')
   await expect(page.getByText(/Mis à jour le/)).toBeVisible()
+
+  // Ticket 021 : l'enseigne (avec logo décoratif alt="") apparaît à côté du
+  // nom réel de la station conseillée (NFR-ACC-4).
+  await expect(page.getByTestId('brand-badge')).toContainText('Total')
+  await expect(page.getByTestId('brand-badge').locator('img')).toHaveAttribute('alt', '')
 
   // Le panneau « Voir le calcul » se déplie avec les raisons et hypothèses.
   await page.getByRole('button', { name: 'Voir le calcul' }).click()

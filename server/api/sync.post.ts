@@ -11,7 +11,7 @@
 // n'upsert que ce que le provider a réellement renvoyé).
 import { z } from 'zod'
 import { createDb } from '../db/client'
-import { createFallbackChain } from '../providers'
+import { createFallbackChain, createOsmMetadataProvider } from '../providers'
 import { createOpendatasoftProvider } from '../providers/opendatasoft'
 import { createJsonExportProvider } from '../providers/jsonExport'
 import { createRoulezEcoProvider } from '../providers/roulezoeco'
@@ -80,7 +80,15 @@ export default defineEventHandler(async (event) => {
       }
     })
 
-    const job = createSyncPricesJob({ db, provider, center, radiusKm })
+    // Même enrichissement que le job périodique (ticket 019) : OSM d'abord,
+    // repli dérivation adresse, sinon nom par défaut = id (aucun nom fabriqué).
+    const job = createSyncPricesJob({
+      db,
+      provider,
+      center,
+      radiusKm,
+      metadataProvider: createOsmMetadataProvider()
+    })
     const result = await job.run()
 
     return { ok: true, ...result }

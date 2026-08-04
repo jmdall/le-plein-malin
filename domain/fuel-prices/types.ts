@@ -19,6 +19,10 @@ export interface StationPrice {
   fuel: FuelType
   price: number // €/L, normalisé en nombre
   updatedAt: Date // prix_maj — jamais inventé
+  // Enrichissement 016-019 : nullable, seulement présents quand la source
+  // (OSM / dérivation adresse) les a réellement fournis — jamais inventés.
+  brandWikidataId?: string | null
+  logoUrl?: string | null
 }
 
 export interface FreshnessInfo {

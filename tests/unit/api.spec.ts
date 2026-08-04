@@ -452,6 +452,8 @@ describe('API — orchestration (ticket 009, spec §8)', () => {
       expect(res.query.center).toEqual({ lat: 48.861, lon: 2.341 })
       expect(res.query.radius).toBe(10)
       expect(res.query.fuel).toBe('Gazole')
+      // Attribution OSM exposée (ticket 020) pour que l'UI l'affiche.
+      expect(res.attribution).toEqual({ source: 'OpenStreetMap (ODbL)' })
       // Chaque station porte une position et un prix (jamais inventés).
       for (const s of res.stations) {
         expect(s.position.lat).toBeTypeOf('number')
@@ -598,6 +600,52 @@ describe('API — orchestration (ticket 009, spec §8)', () => {
       const res = await buildStationDetailResponse({ db: h.db, id: 'a' })
       expect(res.station.id).toBe('a')
       expect(res.prices.map((p) => p.fuel).sort()).toEqual(['Gazole', 'SP98'])
+    } finally {
+      h.close()
+    }
+  })
+
+  it('buildStationDetailResponse : les champs d’identité enrichis voyagent (null si absents)', async () => {
+    const h = createTestDb()
+    try {
+      await seed(h)
+      // Station enrichie (OSM, 019) : nom réel, enseigne, wikidata, logo.
+      await createStationsRepository(h.db).upsert({
+        id: 'rich',
+        name: 'Station Total Réelle',
+        brand: 'TotalEnergies',
+        brandWikidataId: 'Q154037',
+        logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/e/ed/logo.svg',
+        address: 'rue R',
+        city: 'Paris',
+        postalCode: '75001',
+        latitude: 48.86,
+        longitude: 2.34,
+        departmentCode: null,
+        regionCode: null,
+        closed: false,
+        syncedAt: NOW
+      })
+      await createPricesRepository(h.db).upsert({
+        stationId: 'rich',
+        fuel: 'Gazole',
+        price: 1.89,
+        updatedAt: NOW,
+        rupture: false,
+        syncedAt: NOW
+      })
+
+      const enriched = await buildStationDetailResponse({ db: h.db, id: 'rich' })
+      expect(enriched.station.name).toBe('Station Total Réelle')
+      expect(enriched.station.brand).toBe('TotalEnergies')
+      expect(enriched.station.brandWikidataId).toBe('Q154037')
+      expect(enriched.station.logoUrl).toBe('https://upload.wikimedia.org/wikipedia/commons/e/ed/logo.svg')
+
+      // Station sans enrichissement : null, jamais inventés (REC-2/D1).
+      const bare = await buildStationDetailResponse({ db: h.db, id: 'a' })
+      expect(bare.station.brand).toBeNull()
+      expect(bare.station.brandWikidataId).toBeNull()
+      expect(bare.station.logoUrl).toBeNull()
     } finally {
       h.close()
     }
