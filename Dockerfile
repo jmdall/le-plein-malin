@@ -18,6 +18,9 @@ ENV NITRO_HOST=0.0.0.0
 ENV NITRO_PORT=3000
 
 COPY --from=build /app/.output .output
+# Migrations SQLite nécessaires au démarrage (server/plugins/migrate.ts) :
+# en dehors du bundle Nitro, on les copie explicitement dans l'image.
+COPY server/db/migrations server/db/migrations
 
 EXPOSE 3000
 CMD ["node", ".output/server/index.mjs"]
