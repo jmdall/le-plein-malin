@@ -341,6 +341,57 @@ describe('API — géocodage ville/CP (ticket 009, NFR-SEC-3)', () => {
     }
   })
 
+  it('géocodage : repli automatique sur API Adresse si Nominatim échoue (403)', async () => {
+    const h = createTestDb()
+    try {
+      const calls: string[] = []
+      const geocode = createGeocodeProvider(h.db, {
+        fetchFn: async (url: string | URL | Request) => {
+          const u = String(url)
+          calls.push(u)
+          if (u.includes('nominatim')) {
+            return new Response('{}', { status: 403 })
+          }
+          // Réponse GeoJSON de data.gouv.fr.
+          return new Response(
+            JSON.stringify({
+              features: [
+                {
+                  geometry: { coordinates: [2.419441, 48.841526] },
+                  properties: { label: 'Saint-Mandé, France' }
+                }
+              ]
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        }
+      })
+
+      const result = await geocode('94160')
+      expect(result.lat).toBeCloseTo(48.841526, 5)
+      expect(result.lon).toBeCloseTo(2.419441, 5)
+      expect(result.label).toContain('Saint-Mandé')
+      expect(calls.length).toBe(2) // Nominatim (échec) puis API Adresse (succès)
+      expect(calls[0]).toContain('nominatim')
+      expect(calls[1]).toContain('data.gouv.fr')
+    } finally {
+      h.close()
+    }
+  })
+
+  it('géocodage : échec des deux sources → erreur explicite', async () => {
+    const h = createTestDb()
+    try {
+      const geocode = createGeocodeProvider(h.db, {
+        fetchFn: async () => new Response('{}', { status: 403 })
+      })
+
+      await expect(geocode('94160')).rejects.toThrow(/toutes les sources ont échoué/)
+    } finally {
+      h.close()
+    }
+  })
+
   it('géocodage : le cache expiré (TTL 24 h) déclenche un nouvel appel', async () => {
     const h = createTestDb()
     try {
