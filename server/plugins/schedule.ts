@@ -5,13 +5,7 @@
 // SYNC_INTERVAL_HOURS (défaut 2).
 import { defineNitroPlugin } from 'nitropack/runtime'
 import { createDb } from '../db/client'
-import {
-  createOpendatasoftProvider,
-  createJsonExportProvider,
-  createRoulezEcoProvider,
-  createCacheProvider,
-  createFallbackChain
-} from '../providers'
+import { createSyncProviderChain } from '../providers/syncChain'
 import { scheduleSyncPrices } from '../jobs/schedule'
 
 export default defineNitroPlugin((nitroApp) => {
@@ -19,20 +13,10 @@ export default defineNitroPlugin((nitroApp) => {
   // ici on prépare la connexion partagée du job).
   const { db } = createDb()
 
-  // Chaîne de repli (ADR-0003) : Opendatasoft → export JSON → roulez-eco → cache.
-  const provider = createFallbackChain({
-    providers: [
-      createOpendatasoftProvider(),
-      createJsonExportProvider(),
-      createRoulezEcoProvider(),
-      createCacheProvider(db)
-    ],
-    onError: (name, error) => {
-      nitroApp.captureError(error instanceof Error ? error : new Error(String(error)), {
-        tags: ['sync', name]
-      })
-    }
-  })
+  // Chaîne de repli DÉDIÉE sync (export JSON complet prioritaire) : l'API
+  // records paginée est plafonnée à 3000 records/carburant, insuffisante pour
+  // la France entière (server/providers/syncChain.ts).
+  const provider = createSyncProviderChain(db)
 
   const stop = scheduleSyncPrices({
     db,
