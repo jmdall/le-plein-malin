@@ -111,14 +111,36 @@ stations n'ont pas été actualisées depuis longtemps).
 
 ## 5. Fréquence réellement observable
 
+> **Vérification 2026-08-04 (croyance « le site se met à jour toutes les
+> 10 minutes » — non confirmée)** : le dataset et le site partagent les
+> mêmes données et sont régénérés **~1 fois par jour**, pas toutes les
+> 10 minutes :
+>
+> - `data_processed` du dataset `prix-carburants-quotidien` :
+>   `2026-08-03T06:05:45+00:00` — identique au `last_modified` des 4 exports
+>   (csv/json/geojson/shp) et au `last_update` de data.gouv.fr. Un seul
+>   rafraîchissement quotidien, vers 06:05 UTC.
+> - API interne du site (`/map/recuperer_infos_pdv/{id}`) : mêmes prix et
+>   mêmes dates que le dataset (ex. Gennevilliers 92230008 : SP95-E10 2,100 €
+>   daté 31/07/26 des deux côtés). Le site n'est pas plus frais que le
+>   dataset.
+> - Ce qui donne l'impression de mises à jour fréquentes : chaque station a
+>   son propre horodatage `prix_maj` (les déclarations arrivent en continu,
+>   mais une station donnée ne bouge que quelques fois par jour, parfois
+>   beaucoup moins). Le site n'a pas de rafraîchissement périodique de
+>   10 minutes (aucun `setInterval`/refresh dans ses bundles JS).
+
 - Les prix individuels portent un horodatage `prix_maj` précis (ex.
   `2026-07-31 15:37:38`). Les stations mettent à jour leurs prix à des moments
   hétérogènes : certaines le jour même, d'autres depuis plusieurs jours.
 - Le fichier `jour` de roulez-eco.fr du 2026-08-02 contient 13 663 horodatages
   `maj` distincts étalés sur la journée → **les mises à jour arrivent en continu**.
-- En pratique pour une application : interroger l'API 2 à 4 fois par jour suffit ;
-  le prix d'une station n'a pas besoin d'être rafraîchi plus souvent que toutes
-  les heures (sa `prix_maj` n'aura pas bougé).
+- En pratique pour une application : interroger l'API **1 à 4 fois par jour
+  suffit** (le dataset est régénéré ~1×/jour à 06:05 UTC) ; le prix d'une
+  station n'a pas besoin d'être rafraîchi plus souvent que toutes les heures
+  (sa `prix_maj` n'aura pas bougé). La synchronisation toutes les 2 h du job
+  (`SYNC_INTERVAL_HOURS`) est donc déjà au-dessus du besoin ; un passage à
+  6-12 h serait tout aussi couvrant tout en réduisant la charge.
 
 ## 6. Conditions de réutilisation
 
