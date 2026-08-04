@@ -81,13 +81,31 @@ export function requestGeolocation(): Promise<GeoResult> {
   })
 }
 
-// ——— Lien « Itinéraire » vers OSM (spec §4, #7) ———
-// Construit une URL d'itinéraire publique (sans clé, aucun service payant,
-// hors périmètre : aucun routage routier) avec les coordonnées exactes de la
-// station. encodeURIComponent est appliqué par URLSearchParams.
+// ——— Liens « Itinéraire » (spec §4, #7) ———
+// URLs publiques, sans clé, aucun service payant, hors périmètre : aucun
+// routage routier intégré (D3/ADR-0002). OSM reste la destination par défaut
+// (libre) ; Waze et Google Maps sont proposés en alternatives (comportement
+// courant des apps concurrentes, ex. PouvoirAchat+). encodeURIComponent est
+// appliqué par URLSearchParams.
+export interface DirectionsLinks {
+  osm: string
+  waze: string
+  googleMaps: string
+}
+
 export function buildDirectionsUrl(position: { lat: number; lon: number }): string {
   const params = new URLSearchParams({
     route: `${position.lat.toFixed(6)},${position.lon.toFixed(6)}`
   })
   return `https://www.openstreetmap.org/directions?${params}`
+}
+
+export function buildDirectionsLinks(position: { lat: number; lon: number }): DirectionsLinks {
+  const lat = position.lat.toFixed(6)
+  const lon = position.lon.toFixed(6)
+  return {
+    osm: buildDirectionsUrl(position),
+    waze: `https://waze.com/ul?ll=${lat},${lon}&navigate=yes`,
+    googleMaps: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`
+  }
 }

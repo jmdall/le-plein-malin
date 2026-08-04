@@ -98,10 +98,13 @@ test('la recommandation apparaît après une recherche avec mock API', async ({ 
   await expect(page.getByText('Cette station est moins chère et le détour est rentable.')).toBeVisible()
   await expect(page.getByText('Détail du calcul')).toBeVisible()
 
-  // Le bouton « Itinéraire » pointe vers OpenStreetMap avec les coordonnées.
-  const itinerary = page.getByRole('link', { name: 'Itinéraire' })
+  // Le bouton « Itinéraire » (OSM) pointe vers OpenStreetMap avec les
+  // coordonnées ; Waze et Google Maps sont proposés en alternatives.
+  const itinerary = page.getByRole('link', { name: 'Itinéraire', exact: true })
   await expect(itinerary).toBeVisible()
   await expect(itinerary).toHaveAttribute('href', /openstreetmap\.org\/directions/)
+  await expect(page.getByRole('link', { name: 'Ouvrir l’itinéraire dans Waze' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Ouvrir l’itinéraire dans Google Maps' })).toBeVisible()
 
   // La date/heure de mise à jour est toujours affichée avec le prix (FRE-1).
   await expect(page.getByTestId('rec-updated')).toContainText('03/08/2026')

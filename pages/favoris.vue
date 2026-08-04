@@ -7,7 +7,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { useHead } from '#imports'
 import { useFavorites } from '../composables/useFavorites'
-import { buildDirectionsUrl } from '../utils/location'
 import { formatPrice, formatUpdatedAt } from '../utils/format'
 
 useHead({ title: 'Favoris — Je fais le plein ou non ?' })
@@ -105,14 +104,7 @@ function clearAll() {
           </p>
         </div>
         <div class="favorite-actions">
-          <a
-            :href="buildDirectionsUrl(station.position)"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="btn btn-secondary"
-          >
-            Itinéraire
-          </a>
+          <DirectionsLinks :position="station.position" />
           <button type="button" class="btn btn-secondary" :aria-label="`Retirer ${station.name} des favoris`" @click="removeFavorite(station.id)">
             Retirer
           </button>

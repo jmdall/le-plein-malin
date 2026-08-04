@@ -14,11 +14,11 @@ import {
   formatAgeLabel
 } from '../utils/format'
 import { fuelFromApi, fuelOptionFor } from '../utils/fuel'
-import { buildDirectionsUrl } from '../utils/location'
 import {
   FRESHNESS_LABELS,
   type ListedStation
 } from '../utils/stations'
+import DirectionsLinks from './DirectionsLinks.vue'
 import FuelBadge from './FuelBadge.vue'
 
 const props = defineProps<{
@@ -43,7 +43,6 @@ const netSavings = computed(() => props.station.economics.netSavings)
 const grossSavings = computed(() => props.station.economics.grossSavings)
 const detourCost = computed(() => props.station.economics.detourCost)
 const hasEconomics = computed(() => netSavings.value !== null && grossSavings.value !== null && detourCost.value !== null)
-const directionsUrl = computed(() => buildDirectionsUrl(props.station.position))
 const favoriteLabel = computed(() => (props.isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'))
 </script>
 
@@ -124,14 +123,7 @@ const favoriteLabel = computed(() => (props.isFavorite ? 'Retirer des favoris' :
       Prix trop ancien : non pris en compte dans les recommandations.
     </p>
 
-    <a
-      :href="directionsUrl"
-      target="_blank"
-      rel="noopener noreferrer"
-      class="btn btn-secondary station-directions"
-    >
-      Itinéraire
-    </a>
+    <DirectionsLinks v-if="station" :position="station.position" class="station-directions-row" />
   </article>
 </template>
 

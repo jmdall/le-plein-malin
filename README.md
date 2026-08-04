@@ -1,5 +1,9 @@
 # ⛽ Je fais le plein ou non ?
 
+[![Tests](https://img.shields.io/github/actions/workflow/status/jmdall/le-plein-malin/ci.yml?branch=main&job=test&label=tests)](https://github.com/jmdall/le-plein-malin/actions/workflows/ci.yml)
+[![E2E](https://img.shields.io/github/actions/workflow/status/jmdall/le-plein-malin/ci.yml?branch=main&job=e2e&label=e2e)](https://github.com/jmdall/le-plein-malin/actions/workflows/ci.yml)
+[![Build](https://img.shields.io/github/actions/workflow/status/jmdall/le-plein-malin/ci.yml?branch=main&job=build&label=build)](https://github.com/jmdall/le-plein-malin/actions/workflows/ci.yml)
+
 Application web **mobile-first** qui aide un automobiliste en France à décider,
 avec une recommandation **explicable** et fondée sur les **prix officiels** :
 

@@ -20,6 +20,7 @@ import {
 } from '../utils/format'
 import { fuelFromApi, fuelOptionFor } from '../utils/fuel'
 import { buildDirectionsUrl } from '../utils/location'
+import DirectionsLinks from './DirectionsLinks.vue'
 import FuelBadge from './FuelBadge.vue'
 
 const props = defineProps<{
@@ -132,15 +133,7 @@ function togglePanel() {
       </p>
 
       <div class="rec-actions">
-        <a
-          v-if="directionsUrl"
-          :href="directionsUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="btn btn-secondary"
-        >
-          Itinéraire
-        </a>
+        <DirectionsLinks v-if="directionsUrl" :position="station!.position" />
         <button type="button" class="btn btn-ghost" :aria-expanded="panelOpen" @click="togglePanel">
           Voir le calcul
         </button>
