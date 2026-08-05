@@ -48,7 +48,8 @@ de base, pas de Postgres.
 - [ ] **Backend déployé sur le VPS** : `docker compose up --build`, volume
       `sqlite-data` persistant, vars d'env (`DATABASE_PATH`, `SYNC_INTERVAL_HOURS`,
       `FUEL_PRICES_PROVIDER`), sous-domaine HTTPS (reverse proxy + Certbot) qui
-      sert `/api/*`.
+      sert `/api/*`. Le dépôt est **public** : le script `deploy-vps.sh` clone
+      en HTTPS (aucune clé SSH / deploy key requise sur le VPS).
 - [ ] `GET /api/health` répond depuis l'URL publique → l'APK peut appeler l'API.
 - [ ] Un APK debug téléchargé depuis l'onglet Actions s'installe sur un Android
       (sideload) et affiche une recommandation (API VPS joignable).

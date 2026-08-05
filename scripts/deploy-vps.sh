@@ -7,11 +7,13 @@
 # tirer le dépôt git sur le VPS, puis de builder le conteneur. Le volume
 # Docker nommé `sqlite-data` persiste la base entre les redéploiements.
 #
+# Le dépôt est PUBLIC : le clone se fait en HTTPS, sans clé SSH ni deploy key.
+#
 # Prérequis :
 #   - docker + docker compose sur le VPS (vérifié par le script)
-#   - le VPS peut cloner le dépôt (clé SSH de déploiement, ou repo public)
-#   - un fichier .env sur le VPS (copié une première fois par ce script,
-#     protégé en 600, jamais committé)
+#   - un fichier .env sur le VPS : copié par ce script à la première exécution
+#     depuis le .env local (jamais écrasé ensuite, jamais committé). Le .env
+#     du VPS doit contenir les valeurs de PRODUCTION (voir .env.example).
 #   - un sous-domaine HTTPS qui pointe vers le VPS (reverse proxy + Certbot)
 #     qui sert le port 3000 (hors périmètre : config reverse proxy)
 #
@@ -20,29 +22,33 @@
 #   ref : branche/tag à déployer (défaut : main)
 #
 # Variables d'environnement du script :
-#   VPS_HOST            (requis)  cible SSH, ex. deploy@vps.example.com
-#   VPS_DIR             (défaut)  ~/le-plein-malin (répertoire de travail)
-#   VPS_GIT_URL         (défaut)  git@github.com:jmdall/le-plein-malin.git
+#   VPS_HOST            (requis)  cible SSH, ex. root@203.0.113.10
+#   VPS_DIR             (défaut)  /root/le-plein-malin (répertoire de travail)
+#   VPS_GIT_URL         (défaut)  https://github.com/jmdall/le-plein-malin.git
 #   BUILD_ARGS          (défaut)  --build (désactivable avec BUILD_ARGS="")
+#   FORCE_ENV           (défaut)  false — si true, écrase le .env distant
 
 set -euo pipefail
 
 # ——— Configuration ———
-: "${VPS_HOST:?VPS_HOST requis (ex. deploy@vps.example.com)}"
+: "${VPS_HOST:?VPS_HOST requis (ex. root@203.0.113.10)}"
 VPS_DIR="${VPS_DIR:-/root/le-plein-malin}"
-VPS_GIT_URL="${VPS_GIT_URL:-git@github.com:jmdall/le-plein-malin.git}"
+VPS_GIT_URL="${VPS_GIT_URL:-https://github.com/jmdall/le-plein-malin.git}"
 BUILD_ARGS="${BUILD_ARGS:---build}"
+FORCE_ENV="${FORCE_ENV:-false}"
 REF="${1:-main}"
 REMOTE_ENV="${VPS_DIR}/.env"
 
-if [[ ! -f ".env" ]]; then
-  echo "⚠️  .env local introuvable. Le premier déploiement poussera le .env du VPS uniquement s'il existe déjà." >&2
-  echo "    Copiez .env.example vers .env et remplissez les valeurs AVANT de déployer." >&2
+# ——— 0. Pré-vérifications locales ———
+if [[ ! -f "docker-compose.yml" || ! -f "Dockerfile" ]]; then
+  echo "❌ docker-compose.yml / Dockerfile introuvables. Lancez depuis la racine du dépôt." >&2
+  exit 1
 fi
 
 echo "→ Déploiement de la ref '${REF}' sur ${VPS_HOST}:${VPS_DIR}"
+echo "  (dépôt : ${VPS_GIT_URL})"
 
-# ——— 1. Initialiser ou mettre à jour le clone du dépôt ———
+# ——— 1. Initialiser ou mettre à jour le clone du dépôt (HTTPS, public) ———
 ssh "${VPS_HOST}" "
   set -e
   if [[ ! -d '${VPS_DIR}/.git' ]]; then
@@ -52,22 +58,32 @@ ssh "${VPS_HOST}" "
   git fetch --all --prune
   git checkout '${REF}' 2>/dev/null || git checkout -B '${REF}' origin/'${REF}'
   git pull --ff-only origin '${REF}'
+  echo '✔ Dépôt à jour'
 "
 
-# ——— 2. Pousser le .env (premier déploiement) ———
-if [[ -f ".env" ]]; then
+# ——— 2. Gérer le .env sur le VPS ———
+# Le .env contient des secrets : jamais committé, jamais écrasé sans demande.
+# À la première exécution on le copie depuis le local ; ensuite on le laisse.
+ENV_EXISTS="$(ssh "${VPS_HOST}" "test -f '${REMOTE_ENV}' && echo yes || echo no")"
+if [[ "${ENV_EXISTS}" == "yes" ]] && [[ "${FORCE_ENV}" != "true" ]]; then
+  echo "→ .env distant présent — conservé (FORCE_ENV=true pour l'écraser)"
+elif [[ -f ".env" ]]; then
   scp -q .env "${VPS_HOST}:${REMOTE_ENV}"
   ssh "${VPS_HOST}" "chmod 600 '${REMOTE_ENV}'"
+  echo "→ .env copié depuis le local (protégé en 600)"
+else
+  echo "⚠️  Aucun .env local : le conteneur utilisera ses valeurs par défaut." >&2
 fi
 
 # ——— 3. Vérifier docker/compose sur le VPS ———
 ssh "${VPS_HOST}" "
   command -v docker >/dev/null || { echo '❌ docker introuvable sur le VPS' >&2; exit 1; }
   docker compose version >/dev/null 2>&1 || { echo '❌ docker compose introuvable sur le VPS' >&2; exit 1; }
+  echo '✔ docker compose OK'
 "
 
 # ——— 4. Build + up (depuis le répertoire du dépôt) ———
 ssh "${VPS_HOST}" "cd '${VPS_DIR}' && docker compose ${BUILD_ARGS} up -d"
 
 echo "✅ Backend déployé : ${VPS_HOST}:${VPS_DIR} (ref ${REF})"
-echo "   Vérifiez avec : curl https://votre-sous-domaine.fr/api/health"
+echo "   Vérifiez avec : curl https://api.example.com/api/health"
