@@ -196,3 +196,52 @@ test('changer le rayon relance immédiatement la recherche', async ({ page }) =>
   await expect(page.getByRole('radio', { name: '20 km' })).toBeChecked()
   await expect(page.getByRole('radio', { name: '10 km' })).not.toBeChecked()
 })
+
+test('après rechargement, la sélection carburant reflète la préférence mémorisée — un seul onglet actif', async ({
+  page
+}) => {
+  const calls: string[] = []
+  await page.route('**/api/recommendation*', async (route) => {
+    const fuel = new URL(route.request().url()).searchParams.get('fuel') ?? 'Gazole'
+    calls.push(fuel)
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(recommendation(fuel, 1.899, 'st-1'))
+    })
+  })
+  await page.route('**/api/stations*', async (route) => {
+    const params = new URL(route.request().url()).searchParams
+    const fuel = params.get('fuel') ?? 'Gazole'
+    const radius = Number(params.get('radius') ?? 10)
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(stationsResult(fuel, 1.899, radius))
+    })
+  })
+
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(1200)
+
+  // Une recherche d'abord (crée reco.lastSearch), puis sélectionner SP95.
+  await page.getByPlaceholder('Rechercher une ville, une adresse…').fill('Paris')
+  await page.getByRole('button', { name: 'Rechercher', exact: true }).click()
+  await expect.poll(() => calls.length).toBeGreaterThan(0)
+  await page.waitForTimeout(800)
+
+  await page.getByRole('tab', { name: 'SP95', exact: true }).click()
+  await expect.poll(() => calls[calls.length - 1]).toBe('SP95')
+
+  // Recharger : la préférence (SP95) doit rester la seule sélection active.
+  await page.reload()
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(1200)
+
+  await expect(page.getByRole('tab', { name: 'SP95', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: 'Gazole', exact: true })).toHaveAttribute('aria-selected', 'false')
+  const activeTabs = page.locator('.fuel-selector button[role="tab"].segmented-tab-active')
+  await expect(activeTabs).toHaveCount(1)
+  await expect(activeTabs.first()).toHaveText('SP95')
+})

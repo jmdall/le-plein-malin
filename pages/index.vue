@@ -347,12 +347,18 @@ const bottomOverlaysHidden = computed(() => isMobile.value && sheetState.value =
     <!-- Overlay haut : recherche + carburant -->
     <div class="map-overlay map-overlay-top">
       <LocationSearch class="map-search" @search="searchNow" />
-      <FuelSelector
-        class="map-fuel"
-        :model-value="prefs.fuel.value"
-        :options="FUEL_OPTIONS"
-        @update:model-value="changeFuel"
-      />
+      <!-- FuelSelector rendu uniquement côté client après chargement de la
+           préférence (CAR-2) : évite le mismatch SSR/hydratation où Gazole
+           (défaut SSR) et le carburant mémorisé semblaient actifs ensemble. -->
+      <ClientOnly>
+        <FuelSelector
+          v-if="prefs.ready.value"
+          class="map-fuel"
+          :model-value="prefs.fuel.value"
+          :options="FUEL_OPTIONS"
+          @update:model-value="changeFuel"
+        />
+      </ClientOnly>
       <p v-if="searchMessage" class="map-message pill pill-raised" role="status">{{ searchMessage }}</p>
       <p
         v-else-if="geo.geolocationError.value"
@@ -452,11 +458,14 @@ const bottomOverlaysHidden = computed(() => isMobile.value && sheetState.value =
 
         <section class="sheet-settings">
           <h2 class="sheet-settings-title">Réglages</h2>
-          <RadiusSelector
-            :model-value="prefs.radius.value"
-            :options="[...RADIUS_OPTIONS]"
-            @update:model-value="changeRadius"
-          />
+          <ClientOnly>
+            <RadiusSelector
+              v-if="prefs.ready.value"
+              :model-value="prefs.radius.value"
+              :options="[...RADIUS_OPTIONS]"
+              @update:model-value="changeRadius"
+            />
+          </ClientOnly>
           <div v-if="reco.lastSearch.value" class="reload-actions">
             <button type="button" class="btn btn-secondary" @click="reloadWithFuel">
               Recalculer avec {{ prefs.fuel.value }}
