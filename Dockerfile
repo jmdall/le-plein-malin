@@ -11,10 +11,13 @@ WORKDIR /app
 # python3 + make + g++ : outils node-gyp pour better-sqlite3.
 RUN apk add --no-cache python3 make g++
 
-COPY package.json package-lock.json* ./
+# Copie du dépôt AVANT npm install : le postinstall (`nuxt prepare`) génère
+# .nuxt/types en se basant sur la config complète (nuxt.config.ts + modules).
+# Sinon, le type-check de nuxt build échoue sur 'pwa' non résolu.
+COPY . .
+
 RUN npm install
 
-COPY . .
 RUN npm run build
 
 FROM node:22-alpine AS runtime

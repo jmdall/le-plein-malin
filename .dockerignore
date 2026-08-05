@@ -1,0 +1,23 @@
+# Contexte Docker : ne pas embarquer ce qui est reconstruit ou sensible.
+node_modules
+.git
+.env
+.env.*
+!.env.example
+.output
+.data
+.nuxt
+.nitro
+.cache
+dist
+android
+data
+docker-data
+test-results
+playwright-report
+docs/design/reference
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
