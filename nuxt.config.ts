@@ -27,6 +27,13 @@ export default defineNuxtConfig({
     }
   },
   css: ['~/assets/css/main.css'],
+  // Base URL de l'API pour le client (APK Capacitor, ticket 023). Nuxt expose
+  // NUXT_PUBLIC_API_BASE via runtimeConfig.public.apiBase (et non import.meta.env).
+  runtimeConfig: {
+    public: {
+      apiBase: ''
+    }
+  },
   pwa: {
     registerType: 'autoUpdate',
     manifest: {
