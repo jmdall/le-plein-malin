@@ -209,7 +209,10 @@ export function createOsmMetadataProvider(
 
       // Logo best-effort : jamais bloquant (Wikidata indisponible → null).
       // Pool borné (LOGO_FETCH_CONCURRENCY) : éviter de marteler Wikidata —
-      // 5700 fetch simultanés → 429 massifs et 0 logo (vérifié).
+      // 5700 fetch simultanés → 429 massifs et 0 logo (vérifié). On déduplique
+      // par brand:wikidata (des dizaines de milliers de stations partagent
+      // ~40 enseignes) : un fetch Wikidata par enseigne, jamais par station.
+      const logoCache = new Map<string, string | null>()
       const resolved: StationMetadata[] = new Array(flattened.length)
       let cursor = 0
       async function worker() {
@@ -217,10 +220,16 @@ export function createOsmMetadataProvider(
           const index = cursor++
           if (index >= flattened.length) return
           const meta = flattened[index]!
-          resolved[index] = {
-            ...meta,
-            logoUrl: await resolveLogo(meta.brandWikidataId)
+          let logoUrl: string | null
+          if (meta.brandWikidataId) {
+            if (!logoCache.has(meta.brandWikidataId)) {
+              logoCache.set(meta.brandWikidataId, await resolveLogo(meta.brandWikidataId))
+            }
+            logoUrl = logoCache.get(meta.brandWikidataId) ?? null
+          } else {
+            logoUrl = null
           }
+          resolved[index] = { ...meta, logoUrl }
         }
       }
       const workers = Array.from(

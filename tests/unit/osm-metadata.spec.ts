@@ -350,6 +350,31 @@ describe('osm-metadata provider', () => {
     expect(maxInFlight).toBeLessThanOrEqual(2)
     expect(result.every((r) => r.logoUrl?.includes('upload.wikimedia.org'))).toBe(true)
   })
+
+  it('déduplique les logos par brand:wikidata : un seul fetch Wikidata par enseigne (jamais par station)', async () => {
+    const wikidataFetches = new Set<string>()
+    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('wikidata.org')) {
+        const id = decodeURIComponent(url.split('/').pop() ?? '').replace(/\.json$/, '')
+        wikidataFetches.add(id)
+        return wikidataResponse(id, 'Esso textlogo.svg')
+      }
+      // 3 stations Esso (même brand:wikidata Q867662).
+      return overpassResponse([
+        FIXTURE_ESSO,
+        { ...FIXTURE_ESSO, id: 1, tags: { ...FIXTURE_ESSO.tags, 'ref:FR:prix-carburants': '11111111' } },
+        { ...FIXTURE_ESSO, id: 2, tags: { ...FIXTURE_ESSO.tags, 'ref:FR:prix-carburants': '22222222' } }
+      ])
+    })
+    const provider = createOsmMetadataProvider({ fetchFn })
+
+    const result = await provider.findMetadataFor(['77400012', '11111111', '22222222'])
+
+    expect(result).toHaveLength(3)
+    expect(wikidataFetches.size).toBe(1)
+    expect(result.every((r) => r.logoUrl?.includes('upload.wikimedia.org'))).toBe(true)
+  })
 })
 
 describe('buildLogoUrl (résolution logo Wikimedia)', () => {
