@@ -41,9 +41,16 @@ export function clearSavedLocation(): void {
   storageRemove(STORAGE_KEYS.location)
 }
 
-// ——— Géolocalisation navigateur (LOC-1, LOC-4) ———
+// ——— Géolocalisation (LOC-1, LOC-4) ———
 // Retourne une promesse typée : success, error (compréhensible), ou denied
 // (l'utilisateur a refusé). Jamais de rejet non géré.
+//
+// Sur l'APK (WebView Capacitor), `navigator.geolocation` est cassé : la
+// WebView n'implémente pas la boîte de permission système et renvoie
+// systématiquement PERMISSION_DENIED (ticket 024). On passe donc par le
+// bridge natif `@capacitor/geolocation` (requête de permission Android
+// native), avec repli sur l'API navigateur ailleurs. Les deux sont importés
+// dynamiquement pour rester inerte dans les tests et hors Capacitor.
 export interface GeoResult {
   ok: boolean
   position?: GeoPosition
@@ -51,14 +58,70 @@ export interface GeoResult {
   denied?: boolean
 }
 
-export function isGeoAvailable(): boolean {
-  return typeof window !== 'undefined' && typeof window.navigator !== 'undefined' && 'geolocation' in window.navigator
+type NativeGeolocation = {
+  requestPermissions: () => Promise<{ location?: string; coarseLocation?: string }>
+  getCurrentPosition: (options?: { enableHighAccuracy?: boolean; timeout?: number; maximumAge?: number }) => Promise<{
+    coords: { latitude: number; longitude: number }
+  }>
 }
 
-export function requestGeolocation(): Promise<GeoResult> {
-  if (!isGeoAvailable()) {
-    return Promise.resolve({ ok: false, error: 'La géolocalisation n’est pas disponible sur cet appareil.' })
+let nativeGeolocation: NativeGeolocation | null | undefined
+
+async function loadNativeGeolocation(): Promise<NativeGeolocation | null> {
+  if (nativeGeolocation !== undefined) return nativeGeolocation
+  try {
+    const cap = await import('@capacitor/core')
+    const plugin = cap.Capacitor.isNativePlatform()
+      ? cap.registerPlugin<NativeGeolocation>('Geolocation')
+      : null
+    nativeGeolocation = plugin
+  } catch {
+    nativeGeolocation = null
   }
+  return nativeGeolocation
+}
+
+export function isGeoAvailable(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.navigator !== 'undefined' &&
+    'geolocation' in window.navigator
+  )
+}
+
+export async function requestGeolocation(): Promise<GeoResult> {
+  const native = await loadNativeGeolocation()
+  if (native) {
+    return requestNativeGeolocation(native)
+  }
+  if (!isGeoAvailable()) {
+    return { ok: false, error: 'La géolocalisation n’est pas disponible sur cet appareil.' }
+  }
+  return requestBrowserGeolocation()
+}
+
+// ——— Bridge natif Capacitor (@capacitor/geolocation, APK Android) ———
+async function requestNativeGeolocation(native: NativeGeolocation): Promise<GeoResult> {
+  try {
+    const permissions = await native.requestPermissions()
+    const granted =
+      permissions.location === 'granted' || permissions.coarseLocation === 'granted'
+    if (!granted) {
+      return { ok: false, denied: true, error: 'Vous avez refusé la géolocalisation.' }
+    }
+    const position = await native.getCurrentPosition({
+      enableHighAccuracy: false,
+      timeout: 10_000,
+      maximumAge: 5 * 60_000
+    })
+    return { ok: true, position: { lat: position.coords.latitude, lon: position.coords.longitude } }
+  } catch {
+    return { ok: false, error: 'Impossible d’obtenir votre position sur cet appareil.' }
+  }
+}
+
+// ——— API navigateur standard (web / dev) ———
+function requestBrowserGeolocation(): Promise<GeoResult> {
   return new Promise((resolve) => {
     window.navigator.geolocation.getCurrentPosition(
       (position) => {

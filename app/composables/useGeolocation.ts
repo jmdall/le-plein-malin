@@ -3,7 +3,6 @@
 // géoloc, LOC-4 : la position précise n'est jamais persistée).
 import { ref, type Ref } from 'vue'
 import {
-  isGeoAvailable,
   readGeoConsent,
   requestGeolocation,
   writeGeoConsent,
@@ -66,10 +65,9 @@ export function useGeolocation(): UseGeolocationReturn {
   }
 
   async function request() {
-    if (!isGeoAvailable()) {
-      geolocationError.value = 'La géolocalisation n’est pas disponible sur cet appareil.'
-      return { ok: false, error: geolocationError.value }
-    }
+    // Sur l'APK (WebView Capacitor), la géolocalisation passe par le bridge
+    // natif @capacitor/geolocation : `isGeoAvailable()` (navigator.geolocation)
+    // n'y est PAS fiable et ne doit pas bloquer la requête native.
     locating.value = true
     geolocationError.value = null
     const result = await requestGeolocation()

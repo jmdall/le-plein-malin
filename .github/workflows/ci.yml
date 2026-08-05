@@ -74,6 +74,8 @@ jobs:
         run: npx cap add android
       - name: Synchroniser le bundle web vers Android
         run: npx cap sync android
+      - name: Déclarer les permissions de géolocalisation (ticket 024)
+        run: bash scripts/android-manifest-permissions.sh
       - name: Compiler l'APK debug
         working-directory: android
         run: ./gradlew assembleDebug
