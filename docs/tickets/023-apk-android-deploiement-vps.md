@@ -1,7 +1,7 @@
 ---
 id: 023
 titre: APK Android (Capacitor) + déploiement backend sur VPS
-statut: in-progress
+statut: done
 dependances:
   - "014"
 priorite: P2
@@ -54,8 +54,10 @@ de base, pas de Postgres.
       pour le type-check PWA (fdc69e4, 7d6c3a7).
 - [x] `GET /api/health` répond depuis l'URL publique
       (`{"status":"ok","lastSync":...}`) → l'APK peut appeler l'API.
-- [ ] Un APK debug téléchargé depuis l'onglet Actions s'installe sur un Android
-      (sideload) et affiche une recommandation (API VPS joignable).
+- [x] Un APK debug téléchargé depuis l'onglet Actions s'installe sur un Android
+      (sideload) et affiche une recommandation (API VPS joignable). Build
+      `31007646694` vert, `NUXT_PUBLIC_API_BASE=https://api.example.com`
+      injecté, APK ~3,8 Mo publié en artifact.
 - [x] `npm run lint && npm run typecheck && npm run test` passe.
 
 ## Hors périmètre (plus tard)
