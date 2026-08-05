@@ -83,7 +83,9 @@ ssh "${VPS_HOST}" "
 "
 
 # ——— 4. Build + up (depuis le répertoire du dépôt) ———
-ssh "${VPS_HOST}" "cd '${VPS_DIR}' && docker compose ${BUILD_ARGS} up -d"
+# Syntaxe : `docker compose up --build -d` (l'ordre --build après `up` est
+# requis par Compose v2/v5 ; `docker compose --build up` est invalide).
+ssh "${VPS_HOST}" "cd '${VPS_DIR}' && docker compose up ${BUILD_ARGS} -d"
 
 echo "✅ Backend déployé : ${VPS_HOST}:${VPS_DIR} (ref ${REF})"
 echo "   Vérifiez avec : curl https://api.example.com/api/health"
