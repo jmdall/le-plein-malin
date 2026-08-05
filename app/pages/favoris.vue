@@ -8,6 +8,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useHead } from '#imports'
 import { useFavorites } from '../composables/useFavorites'
 import { formatPrice, formatUpdatedAt } from '../utils/format'
+import { apiUrl } from '../utils/api'
 import { OSM_ATTRIBUTION_NOTE } from '../utils/stationIdentity'
 import FuelBadge from '../components/FuelBadge.vue'
 import DirectionsLinks from '../components/DirectionsLinks.vue'
@@ -45,7 +46,7 @@ onMounted(async () => {
   error.value = null
   const results = await Promise.allSettled(
     ids.value.map(async (id) => {
-      const res = await fetch(`/api/stations/${encodeURIComponent(id)}`)
+      const res = await fetch(apiUrl(`/api/stations/${encodeURIComponent(id)}`))
       if (!res.ok) throw new Error(`Station ${id} indisponible`)
       const body = (await res.json()) as { station: FavoriteStationDetail }
       return body.station

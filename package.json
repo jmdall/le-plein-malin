@@ -24,6 +24,9 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "@eslint/js": "^10.0.1",
     "@nuxt/eslint": "^1.16.0",
     "@nuxt/test-utils": "^4.1.0",

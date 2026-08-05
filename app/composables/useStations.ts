@@ -9,6 +9,7 @@
 // par recherche, aucune divergence (ticket 012).
 import { ref, type Ref } from 'vue'
 import { fuelToApi } from '../utils/fuel'
+import { apiUrl } from '../utils/api'
 import type { StationsRequest, StationsQueryResult } from '../utils/stations'
 
 export type StationsStatus = 'idle' | 'loading' | 'success' | 'error'
@@ -60,7 +61,7 @@ export function useStations(): UseStationsReturn {
     params.set('radius', String(request.radius))
     params.set('fuel', fuelToApi(request.fuel))
 
-    const url = `/api/stations?${params.toString()}`
+    const url = apiUrl(`/api/stations?${params.toString()}`)
 
     let response: Response
     try {

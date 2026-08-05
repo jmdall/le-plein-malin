@@ -44,3 +44,39 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+
+  apk:
+    name: APK Android (Capacitor + Gradle)
+    runs-on: ubuntu-latest
+    # Génère un APK debug installable (sideload) à partir du build statique
+    # Nuxt + Capacitor. La base URL de l'API est injectée au build ; l'APK
+    # pointe donc vers le backend hébergé (voir app/utils/api.ts).
+    env:
+      NUXT_PUBLIC_API_BASE: ${{ vars.NUXT_PUBLIC_API_BASE || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - name: Build statique Nuxt (webDir .output/public)
+        run: npm run generate
+      - name: Générer le projet Android (dossier android/ non versionné)
+        run: npx cap add android
+      - name: Synchroniser le bundle web vers Android
+        run: npx cap sync android
+      - name: Compiler l'APK debug
+        working-directory: android
+        run: ./gradlew assembleDebug
+      - name: Uploader l'APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: le-plein-malin-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

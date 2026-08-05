@@ -42,3 +42,6 @@ playwright-report/
 
 # Docker
 docker-data/
+
+# Capacitor / Android (généré par `npx cap add android` dans le CI)
+android/

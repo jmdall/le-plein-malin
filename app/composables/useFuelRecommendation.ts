@@ -4,6 +4,7 @@
 // dupliquée côté client : on consomme la réponse de l'API (REC-2/D1).
 import { ref, type Ref } from 'vue'
 import { fuelToApi } from '../utils/fuel'
+import { apiUrl } from '../utils/api'
 import type { RecommendationRequest, Recommendation } from '../utils/recommendation'
 
 export type RecommendationStatus = 'idle' | 'loading' | 'success' | 'error' | 'empty'
@@ -54,7 +55,7 @@ export function useFuelRecommendation(): UseFuelRecommendationReturn {
     params.set('radius', String(request.radius))
     params.set('fuel', fuelToApi(request.fuel))
 
-    const url = `/api/recommendation?${params.toString()}`
+    const url = apiUrl(`/api/recommendation?${params.toString()}`)
 
     let response: Response
     try {

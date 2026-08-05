@@ -8,6 +8,7 @@
 import { onMounted, ref } from 'vue'
 import { useHead } from '#imports'
 import { FUEL_OPTIONS, DEFAULT_FUEL, type FuelValue } from '../utils/fuel'
+import { apiUrl } from '../utils/api'
 import type { VehicleProfilePayload } from '../utils/recommendation'
 
 useHead({ title: 'Profil véhicule — Je fais le plein ou non ?' })
@@ -38,7 +39,7 @@ async function loadProfile() {
   status.value = 'loading'
   errorMessage.value = null
   try {
-    const res = await fetch('/api/vehicle-profile')
+    const res = await fetch(apiUrl('/api/vehicle-profile'))
     if (!res.ok) throw new Error('Impossible de charger le profil.')
     const body = (await res.json()) as { profile: VehicleProfilePayload }
     form.value = {
@@ -112,7 +113,7 @@ async function save() {
     savingsThreshold: parseNumber(form.value.savingsThreshold) ?? 1
   }
   try {
-    const res = await fetch('/api/vehicle-profile', {
+    const res = await fetch(apiUrl('/api/vehicle-profile'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)

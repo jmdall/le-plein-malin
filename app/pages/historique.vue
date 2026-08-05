@@ -10,6 +10,7 @@ import { ref } from 'vue'
 import { useHead } from '#imports'
 import { FUEL_OPTIONS, DEFAULT_FUEL, type FuelValue } from '../utils/fuel'
 import { formatPrice, formatPercent } from '../utils/format'
+import { apiUrl } from '../utils/api'
 
 useHead({ title: 'Historique — Je fais le plein ou non ?' })
 
@@ -72,7 +73,7 @@ async function loadHistory() {
   searched.value = true
   try {
     const params = new URLSearchParams({ fuel: fuel.value })
-    const res = await fetch(`/api/stations/${encodeURIComponent(id)}/history?${params.toString()}`)
+    const res = await fetch(apiUrl(`/api/stations/${encodeURIComponent(id)}/history?${params.toString()}`))
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null
       throw new Error(body?.error?.message ?? `Station ${id} introuvable ou sans historique.`)
