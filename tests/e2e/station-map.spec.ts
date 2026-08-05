@@ -65,6 +65,36 @@ const MOCK_STATIONS = {
       position: { lat: 48.857, lon: 2.353 },
       economics: { detourCost: null, grossSavings: null, netSavings: null },
       freshness: { ageInHours: 3, status: 'fresh', score: 1 }
+    }),
+    // Un amas dense de stations ordinaires (sans référence ni recommandée)
+    // autour du centre : c'est exactement le « trop de stations sur un petit
+    // périmètre » de la demande — il doit se réduire en un seul cluster.
+    // Écartement ~500 m entre stations : au zoom d'ouverture (11, seuil 2 km)
+    // elles se chevauchent ; à partir du zoom 14 (seuil 0,25 km) elles se
+    // séparent à l'écran.
+    station({
+      id: 'st-c1',
+      name: 'Station Amas 1',
+      brand: 'Total',
+      position: { lat: 48.854, lon: 2.35 },
+      economics: { detourCost: 0.3, grossSavings: 3, netSavings: 2.7 },
+      freshness: { ageInHours: 2, status: 'fresh', score: 1 }
+    }),
+    station({
+      id: 'st-c2',
+      name: 'Station Amas 2',
+      brand: 'Total',
+      position: { lat: 48.8585, lon: 2.35 },
+      economics: { detourCost: 0.31, grossSavings: 2.9, netSavings: 2.59 },
+      freshness: { ageInHours: 2, status: 'fresh', score: 1 }
+    }),
+    station({
+      id: 'st-c3',
+      name: 'Station Amas 3',
+      brand: 'Total',
+      position: { lat: 48.863, lon: 2.35 },
+      economics: { detourCost: 0.32, grossSavings: 2.8, netSavings: 2.48 },
+      freshness: { ageInHours: 2, status: 'fresh', score: 1 }
     })
   ],
   referenceStation: {
@@ -163,15 +193,41 @@ test('la carte se monte après une recherche avec mock API /api/stations', async
   await expect(page.getByRole('button', { name: 'Zoomer', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Dézoomer', exact: true })).toBeVisible()
 
-  // Les marqueurs sont créés (un par station, la référence repérée).
+  // Les marqueurs individuels rendus : uniquement les points d'ancrage
+  // (référence et recommandée, jamais regroupées) — les 3 stations de l'amas
+  // sont dans le cluster.
   const markers = page.locator('.jflp-marker')
   await expect(markers).toHaveCount(2)
   await expect(page.locator('.jflp-marker-reference')).toHaveCount(1)
+  await expect(page.locator('.jflp-marker-recommended')).toHaveCount(1)
+
+  // L'amas de 3 stations ordinaires (~200 m du centre, toutes proches) est
+  // regroupé en un cluster terracotta — la demande produit. Le nombre est
+  // TOUJOURS doublé de texte (NFR-ACC-4 : la couleur n'est jamais le seul
+  // vecteur ; ui-reference §5 « disques pleins terracotta avec le nombre »).
+  await expect(page.locator('.jflp-cluster-marker')).toHaveCount(1)
+  await expect(page.locator('.jflp-cluster')).toHaveText('3')
+  await expect(page.locator('.jflp-cluster-label')).toHaveText('3 stations')
+
+  // Clustering dynamique selon le zoom : en zoomant (500 m d'écart, seuil
+  // 2 km au zoom 11 → 0,25 km au zoom 14), les stations de l'amas ne se
+  // chevauchent plus à l'écran → le cluster disparaît et les 3 marqueurs
+  // individuels réapparaissent (choix produit : regroupement uniquement
+  // quand les marqueurs se chevauchent).
+  const zoomer = page.getByRole('button', { name: 'Zoomer', exact: true })
+  for (let i = 0; i < 3; i++) {
+    await zoomer.click()
+    await page.waitForTimeout(400)
+  }
+  await expect(page.locator('.jflp-cluster-marker')).toHaveCount(0)
+  await expect(page.locator('.jflp-marker')).toHaveCount(5)
 
   // Ticket 021 : le badge marqueur porte le logo d'enseigne (décoratif,
   // alt vide — NFR-ACC-4), la référence (sans logo) porte le repli initiale.
-  await expect(page.locator('img.jflp-price-badge-logo')).toHaveCount(1)
-  await expect(page.locator('img.jflp-price-badge-logo')).toHaveAttribute('alt', '')
+  // Après le zoom, les 5 marqueurs sont visibles : 4 avec logo (recommandée +
+  // amas Total), 1 avec repli initiale (référence Esso sans logo).
+  await expect(page.locator('img.jflp-price-badge-logo')).toHaveCount(4)
+  await expect(page.locator('img.jflp-price-badge-logo').first()).toHaveAttribute('alt', '')
   await expect(page.locator('.jflp-price-badge-logo-fallback')).toHaveCount(1)
   await expect(page.locator('.jflp-price-badge-logo-fallback')).toHaveText('E')
 })

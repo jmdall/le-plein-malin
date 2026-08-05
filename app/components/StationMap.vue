@@ -20,6 +20,8 @@
 import { computed, ref, watch, nextTick, onBeforeUnmount } from 'vue'
 import { buildStationMapView, buildPopupHtml, shortBrandLabel, escapeHtml } from '../utils/stationMap'
 import type { StationMapView, StationMapMarker } from '../utils/stationMap'
+import { buildStationClusters, clusterRadiusKmForZoom } from '../utils/stationClusters'
+import type { StationCluster } from '../utils/stationClusters'
 import { brandInitial } from '../utils/stationIdentity'
 import type { StationsQueryResult } from '../utils/stations'
 
@@ -37,6 +39,7 @@ const view = ref<StationMapView>({ center: null, markers: [] })
 let leaflet: typeof import('leaflet') | null = null
 let map: import('leaflet').Map | null = null
 let markerLayers: import('leaflet').Marker[] = []
+let clusterLayers: import('leaflet').Marker[] = []
 let tileLayer: import('leaflet').TileLayer | null = null
 let resizeObserver: ResizeObserver | null = null
 let lastFlownCenter: { lat: number; lon: number; zoom: number } | null = null
@@ -143,6 +146,11 @@ async function ensureMap() {
     })
 
     syncMarkers()
+    // Clustering dynamique selon le zoom (choix produit) : à chaque
+    // changement de zoom, on recalcule clusters ET marqueurs individuels —
+    // les stations qui ne se chevauchent plus après un zoom avant
+    // réapparaissent aussitôt.
+    map.on('zoomend', () => syncMarkers())
 
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => map?.invalidateSize())
@@ -161,6 +169,55 @@ function accessibleName(marker: StationMapMarker): string {
   if (marker.isReference) parts.push('station de référence')
   if (marker.isStale) parts.push(`${marker.freshnessLabel} — ${marker.ageLabel}`)
   return parts.join(' — ')
+}
+
+// ——— Marqueur cluster (regroupement des marqueurs superposés ; demande
+// produit + design ui-reference.md §5 « Clusters — disques pleins terracotta
+// avec le nombre de stations »). Le chiffre est TOUJOURS doublé de texte
+// (NFR-ACC-4 : la couleur n'est jamais le seul vecteur) et le cluster est
+// un vrai point Leaflet : focusable au clavier et cliquable pour zoomer vers
+// son centroïde. ———
+function makeIconCluster(cluster: StationCluster, L: typeof import('leaflet')) {
+  const count = cluster.markerIds.length
+  const html =
+    `<span class="jflp-cluster" aria-hidden="true">${count}</span>` +
+    `<span class="jflp-cluster-label">${count} stations</span>`
+  return L.divIcon({
+    className: 'jflp-cluster-marker',
+    html,
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+    popupAnchor: [0, 0]
+  })
+}
+
+function clusterAccessibleName(cluster: StationCluster): string {
+  return `${cluster.markerIds.length} stations regroupées`
+}
+
+function syncClusters(clusters: StationCluster[]) {
+  if (!map || !leaflet) return
+  for (const layer of clusterLayers) {
+    map.removeLayer(layer)
+  }
+  clusterLayers = []
+  for (const cluster of clusters) {
+    const layer = leaflet
+      .marker([cluster.lat, cluster.lon], {
+        icon: makeIconCluster(cluster, leaflet),
+        keyboard: true,
+        title: clusterAccessibleName(cluster),
+        alt: clusterAccessibleName(cluster),
+        zIndexOffset: 500
+      })
+      .on('click', () => {
+        if (map) {
+          map.flyTo([cluster.lat, cluster.lon], Math.max(map.getZoom() + 1, 14))
+        }
+      })
+    layer.addTo(map)
+    clusterLayers.push(layer)
+  }
 }
 
 function makeIcon(marker: StationMapMarker, L: typeof import('leaflet')) {
@@ -216,7 +273,16 @@ function syncMarkers() {
     map.removeLayer(m)
   }
   markerLayers = []
-  for (const marker of view.value.markers) {
+  const zoom = map.getZoom()
+  const radius = clusterRadiusKmForZoom(zoom)
+  const clustered = buildStationClusters(view.value.markers, radius)
+  const byId = new Map(view.value.markers.map((m) => [m.id, m]))
+  // Marqueurs individuels : les stations hors de tout cluster PLUS les
+  // points d'ancrage (référence / recommandée), qui ne sont jamais
+  // regroupées — leur badge reste visible (la réponse n'est jamais enfouie).
+  for (const id of clustered.individuals) {
+    const marker = byId.get(id)
+    if (!marker) continue
     const layer = leaflet
       .marker([marker.lat, marker.lon], {
         icon: makeIcon(marker, leaflet),
@@ -234,6 +300,7 @@ function syncMarkers() {
     layer.addTo(map)
     markerLayers.push(layer)
   }
+  syncClusters(clustered.clusters)
 }
 
 onBeforeUnmount(() => {
@@ -244,6 +311,7 @@ onBeforeUnmount(() => {
     map = null
   }
   markerLayers = []
+  clusterLayers = []
   tileLayer = null
 })
 </script>
@@ -477,6 +545,64 @@ onBeforeUnmount(() => {
   outline: 2px solid var(--focus);
   outline-offset: 3px;
   border-radius: var(--r-lg);
+}
+
+/* ═══ Clusters — regroupement des marqueurs superposés (design
+   ui-reference.md §5 : « disques pleins terracotta avec le nombre de
+   stations, texte blanc »). L'icône Leaflet est un point 0×0 recentré par
+   translate(-50%, -50%) ; le disque porte le nombre ET un libellé texte
+   (NFR-ACC-4 : jamais la couleur seule), le nom accessible est porté par le
+   marker. Paire de tokens --terracotta-fill / --terracotta-on-fill : fond
+   terracotta avec du texte blanc, lisible (5,8:1). Identique en clair et en
+   sombre (posé sur les tuiles OSM claires, comme les marqueurs de prix). */
+.jflp-cluster-marker {
+  width: 0;
+  height: 0;
+  overflow: visible;
+  background: transparent;
+  border: none;
+}
+.jflp-cluster {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+  background: var(--terracotta-fill);
+  color: var(--terracotta-on-fill);
+  font-weight: 800;
+  font-size: 0.95rem;
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+}
+.jflp-cluster-label {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 30px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-900);
+  background: var(--surface);
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+}
+.jflp-cluster-marker:focus-visible .jflp-cluster {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+.jflp-cluster-marker:focus-visible .jflp-cluster-label {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
 }
 
 /* ═══ Popups — surface chaude, coins arrondis, ombre teintée (pas la popup
