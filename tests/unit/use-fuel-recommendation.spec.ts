@@ -149,6 +149,20 @@ describe('useFuelRecommendation (ticket 010)', () => {
     expect(url.searchParams.get('fuel')).toBe('SP95')
   })
 
+  it('envoie SP95-E10 sous sa valeur API E10 (le serveur rejette SP95-E10)', async () => {
+    const reco = useFuelRecommendation()
+    let capturedUrl = ''
+    installFetchMock(async (url) => {
+      capturedUrl = url
+      return new Response(JSON.stringify({ recommendation: makeRecommendation() }), { status: 200 })
+    })
+
+    await reco.refresh({ radius: 10, fuel: 'SP95-E10', city: 'Lyon' })
+
+    const url = new URL(capturedUrl, 'http://localhost')
+    expect(url.searchParams.get('fuel')).toBe('E10')
+  })
+
   it('construit une URL ville/CP en mode sans géolocalisation (city / postalCode)', async () => {
     const reco = useFuelRecommendation()
     const urls: string[] = []

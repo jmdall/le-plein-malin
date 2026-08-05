@@ -8,6 +8,7 @@
 // liste et StationMap lit les mêmes données depuis le parent — un seul fetch
 // par recherche, aucune divergence (ticket 012).
 import { ref, type Ref } from 'vue'
+import { fuelToApi } from '../utils/fuel'
 import type { StationsRequest, StationsQueryResult } from '../utils/stations'
 
 export type StationsStatus = 'idle' | 'loading' | 'success' | 'error'
@@ -57,7 +58,7 @@ export function useStations(): UseStationsReturn {
       params.set('q', request.q)
     }
     params.set('radius', String(request.radius))
-    params.set('fuel', request.fuel)
+    params.set('fuel', fuelToApi(request.fuel))
 
     const url = `/api/stations?${params.toString()}`
 

@@ -151,12 +151,23 @@ function widenRadius(value: number) {
 
 function changeFuel(value: (typeof FUEL_OPTIONS)[number]['value']) {
   prefs.selectFuel(value)
-  // On ne relance pas ici : l'utilisateur relance ensuite via « Recalculer »
-  // ou une nouvelle recherche. Le carburant est mémorisé (CAR-2).
+  // Le carburant sélectionné est TOUJOURS la valeur de référence de la
+  // prochaine recherche (la sélection visuelle ne peut pas diverger).
+  const base = reco.lastSearch.value
+  if (base) {
+    const request: RecommendationRequest = { ...base, fuel: value }
+    run(request, appliedLocation.value?.label ?? '', appliedLocation.value?.mode ?? 'query')
+  }
+  // Sans recherche en cours, on mémorise simplement la préférence (CAR-2).
 }
 
 function changeRadius(value: number) {
   prefs.selectRadius(value)
+  const base = reco.lastSearch.value
+  if (base) {
+    const request: RecommendationRequest = { ...base, radius: value }
+    run(request, appliedLocation.value?.label ?? '', appliedLocation.value?.mode ?? 'query')
+  }
 }
 
 // ——— Consommation du lastSearch pour un bouton « Recalculer avec ce carburant » ———
