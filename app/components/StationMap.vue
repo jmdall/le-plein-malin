@@ -38,9 +38,19 @@ const view = ref<StationMapView>({ center: null, markers: [] })
 
 let leaflet: typeof import('leaflet') | null = null
 let map: import('leaflet').Map | null = null
-let markerLayers: import('leaflet').Marker[] = []
-let clusterLayers: import('leaflet').Marker[] = []
 let tileLayer: import('leaflet').TileLayer | null = null
+// Les couches de marqueurs sont RÉUTILISÉES (Map id → couche) tant qu'une
+// station reste un marqueur individuel : on ne supprime/recrée jamais un
+// marqueur inchangé au passage d'un zoom. Sans cela, `zoomend` (déclenché par
+// le flyTo du clic sur marqueur) reconstruisait toutes les couches et
+// détruisait la popup qui venait de s'ouvrir — sur mobile, le touch semblait
+// « faire deux fois » (la popup s'ouvrait puis se fermait aussitôt). La popup
+// reste ouverte tant que la couche source n'est pas retirée (Leaflet la
+// recale pendant les pans/zooms). Les clusters (sans popup) sont eux aussi
+// réutilisés par identité de membres, pour ne pas clignoter au zoom.
+let markerLayers = new Map<string, import('leaflet').Marker>()
+let markerIconSignatures = new Map<string, string>()
+let clusterLayers = new Map<string, import('leaflet').Marker>()
 let resizeObserver: ResizeObserver | null = null
 let lastFlownCenter: { lat: number; lon: number; zoom: number } | null = null
 
@@ -195,28 +205,40 @@ function clusterAccessibleName(cluster: StationCluster): string {
   return `${cluster.markerIds.length} stations regroupées`
 }
 
+function clusterKey(cluster: StationCluster): string {
+  return cluster.markerIds.slice().sort().join(',')
+}
+
 function syncClusters(clusters: StationCluster[]) {
   if (!map || !leaflet) return
-  for (const layer of clusterLayers) {
-    map.removeLayer(layer)
-  }
-  clusterLayers = []
+  const seen = new Set<string>()
   for (const cluster of clusters) {
-    const layer = leaflet
-      .marker([cluster.lat, cluster.lon], {
-        icon: makeIconCluster(cluster, leaflet),
-        keyboard: true,
-        title: clusterAccessibleName(cluster),
-        alt: clusterAccessibleName(cluster),
-        zIndexOffset: 500
-      })
-      .on('click', () => {
-        if (map) {
-          map.flyTo([cluster.lat, cluster.lon], Math.max(map.getZoom() + 1, 14))
-        }
-      })
-    layer.addTo(map)
-    clusterLayers.push(layer)
+    const key = clusterKey(cluster)
+    seen.add(key)
+    let layer = clusterLayers.get(key)
+    if (!layer) {
+      layer = leaflet
+        .marker([cluster.lat, cluster.lon], {
+          icon: makeIconCluster(cluster, leaflet),
+          keyboard: true,
+          title: clusterAccessibleName(cluster),
+          alt: clusterAccessibleName(cluster),
+          zIndexOffset: 500
+        })
+        .on('click', () => {
+          if (map) {
+            map.flyTo([cluster.lat, cluster.lon], Math.max(map.getZoom() + 1, 14))
+          }
+        })
+      layer.addTo(map)
+      clusterLayers.set(key, layer)
+    }
+  }
+  for (const [key, layer] of clusterLayers) {
+    if (!seen.has(key)) {
+      map.removeLayer(layer)
+      clusterLayers.delete(key)
+    }
   }
 }
 
@@ -267,39 +289,83 @@ function makeIcon(marker: StationMapMarker, L: typeof import('leaflet')) {
   })
 }
 
+function iconSignature(marker: StationMapMarker): string {
+  // Un marqueur est réutilisé tant que son « apparence » ne change pas : même
+  // état (référence / recommandée / périmée) et même texte de prix. Si un seul
+  // de ces éléments change (nouvelle recommandation, prix rafraîchi), on met
+  // à jour l'icône du marqueur EXISTANT au lieu de le supprimer/recréer —
+  // une popup ouverte sur lui n'est pas perdue. Seuls les marqueurs réellement
+  // absents sont retirés de la carte.
+  const flags = [
+    marker.isReference && 'r',
+    marker.isRecommended && 'R',
+    marker.isStale && 's'
+  ]
+    .filter(Boolean)
+    .join('')
+  return `${flags}|${marker.markerPriceLabel}|${marker.logoUrl ?? ''}`
+}
+
 function syncMarkers() {
   if (!map || !leaflet) return
-  for (const m of markerLayers) {
-    map.removeLayer(m)
-  }
-  markerLayers = []
   const zoom = map.getZoom()
   const radius = clusterRadiusKmForZoom(zoom)
   const clustered = buildStationClusters(view.value.markers, radius)
   const byId = new Map(view.value.markers.map((m) => [m.id, m]))
+
   // Marqueurs individuels : les stations hors de tout cluster PLUS les
   // points d'ancrage (référence / recommandée), qui ne sont jamais
   // regroupées — leur badge reste visible (la réponse n'est jamais enfouie).
+  const seen = new Set<string>()
   for (const id of clustered.individuals) {
     const marker = byId.get(id)
     if (!marker) continue
-    const layer = leaflet
-      .marker([marker.lat, marker.lon], {
-        icon: makeIcon(marker, leaflet),
-        keyboard: true,
-        title: accessibleName(marker),
-        alt: accessibleName(marker),
-        zIndexOffset: marker.isRecommended ? 2000 : marker.isReference ? 1000 : 0
-      })
-      .bindPopup(buildPopupHtml(marker), { maxWidth: 260, autoPan: true, closeButton: true })
-      .on('click', () => {
-        if (map) {
-          map.flyTo([marker.lat, marker.lon], Math.max(map.getZoom(), 14))
-        }
-      })
-    layer.addTo(map)
-    markerLayers.push(layer)
+    seen.add(id)
+    let layer = markerLayers.get(id)
+    if (!layer) {
+      layer = leaflet
+        .marker([marker.lat, marker.lon], {
+          icon: makeIcon(marker, leaflet),
+          keyboard: true,
+          title: accessibleName(marker),
+          alt: accessibleName(marker),
+          zIndexOffset: marker.isRecommended ? 2000 : marker.isReference ? 1000 : 0
+        })
+        .bindPopup(buildPopupHtml(marker), { maxWidth: 260, autoPan: true, closeButton: true })
+        .on('click', () => {
+          if (map) {
+            map.flyTo([marker.lat, marker.lon], Math.max(map.getZoom(), 14))
+          }
+        })
+      layer.addTo(map)
+      markerLayers.set(id, layer)
+    }
+    const signature = iconSignature(marker)
+    if (markerIconSignatures.get(id) !== signature) {
+      layer.setIcon(makeIcon(marker, leaflet))
+      layer.setLatLng([marker.lat, marker.lon])
+      layer.options.title = accessibleName(marker)
+      layer.options.alt = accessibleName(marker)
+      layer.setZIndexOffset(marker.isRecommended ? 2000 : marker.isReference ? 1000 : 0)
+      // Le contenu de la popup doit suivre l'état (prix / fraîcheur) : la
+      // réouvrir si elle était ouverte sur ce marqueur.
+      if (layer.isPopupOpen()) {
+        layer.setPopupContent(buildPopupHtml(marker))
+      }
+      markerIconSignatures.set(id, signature)
+    }
   }
+
+  // Retirer les marqueurs qui ne sont plus individuels (entrés dans un
+  // cluster) ou qui ont disparu des données.
+  for (const [id, layer] of markerLayers) {
+    if (!seen.has(id)) {
+      map.removeLayer(layer)
+      markerLayers.delete(id)
+      markerIconSignatures.delete(id)
+    }
+  }
+
   syncClusters(clustered.clusters)
 }
 
@@ -310,8 +376,9 @@ onBeforeUnmount(() => {
     map.remove()
     map = null
   }
-  markerLayers = []
-  clusterLayers = []
+  markerLayers = new Map()
+  markerIconSignatures = new Map()
+  clusterLayers = new Map()
   tileLayer = null
 })
 </script>

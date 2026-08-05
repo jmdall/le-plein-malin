@@ -231,3 +231,79 @@ test('la carte se monte après une recherche avec mock API /api/stations', async
   await expect(page.locator('.jflp-price-badge-logo-fallback')).toHaveCount(1)
   await expect(page.locator('.jflp-price-badge-logo-fallback')).toHaveText('E')
 })
+
+test('le touch sur un marqueur ouvre la popup et elle reste ouverte pendant le zoom (mobile)', async ({
+  page
+}) => {
+  // Régression (bug signalé : « sur mobile le touch sur une station marche
+  // pas / agit comme si je faisais 2 fois ») : le tap ouvre la popup puis le
+  // flyTo zoome ; avant le correctif, `zoomend` supprimait et recréait toutes
+  // les couches de marqueurs et détruisait la popup qui venait de s'ouvrir —
+  // elle semblait clignoter puis disparaître, obligeant à retaper. On vérifie
+  // qu'après un tap sur un marqueur, la popup reste ouverte une fois le zoom
+  // terminé.
+  await page.route('**/api/recommendation*', (route) => {
+    void route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(MOCK_RECOMMENDATION)
+    })
+  })
+  await page.route('**/api/stations*', (route) => {
+    void route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(MOCK_STATIONS)
+    })
+  })
+  await mockLogos(page)
+
+  await page.setViewportSize({ width: 393, height: 852 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(1500)
+
+  await page.getByPlaceholder('Rechercher une ville, une adresse…').fill('Paris')
+  await page.getByRole('button', { name: 'Rechercher', exact: true }).click()
+  await expect(page.getByTestId('station-map-container')).toHaveClass(/leaflet-container/)
+
+  // L'overlay haut (recherche/carburant) recouvre les premiers marqueurs :
+  // on le masque pour que le badge du marqueur recommandé soit atteignable
+  // au toucher, comme il le serait sur une carte avec moins d'overlays.
+  await page.evaluate(() => {
+    const overlay = document.querySelector('.map-overlay-top') as HTMLElement | null
+    if (overlay) overlay.style.display = 'none'
+  })
+
+  const badge = page.locator('.jflp-marker-recommended .jflp-badge-stack')
+  await expect(badge).toBeVisible()
+  const box = await badge.boundingBox()
+  expect(box).not.toBeNull()
+  const x = box!.x + box!.width / 2
+  const y = box!.y + box!.height / 2
+
+  // Vérifier que le badge est bien l'élément touché (sinon le test taperait
+  // à côté). Le marker Leaflet (0×0) est décoré du badge via translate.
+  const hit = await page.evaluate(([px, py]) => {
+    const el = document.elementFromPoint(px, py)
+    return el ? (el as HTMLElement).closest('.jflp-badge-stack') !== null : false
+  }, [x, y] as [number, number])
+  expect(hit).toBe(true)
+
+  // Un tap tactile réel (séquence touchStart/touchEnd via CDP — le contexte
+  // de test Chromium n'a pas `hasTouch` activé, mais Leaflet écoute les
+  // évènements tactile simulés par le navigateur).
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+
+  // La popup s'ouvre (le tap déclenche bindPopup + flyTo vers zoom ≥ 14).
+  const popup = page.locator('.leaflet-popup')
+  await expect(popup).toBeVisible()
+
+  // Une fois l'animation du zoom terminée (flyTo ~1 s), la popup doit
+  // TOUJOURS être ouverte — c'est le cœur de la régression.
+  await page.waitForTimeout(2500)
+  await expect(popup).toBeVisible()
+  await expect(popup.getByText('Station Fraîche')).toBeVisible()
+})
