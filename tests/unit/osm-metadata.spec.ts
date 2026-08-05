@@ -327,6 +327,29 @@ describe('osm-metadata provider', () => {
     expect(fetchFn).toHaveBeenCalledTimes(2)
     expect(result).toEqual([])
   })
+
+  it('résout les logos avec un pool borné (concurrence limitée, pas de 429 massifs)', async () => {
+    let inFlight = 0
+    let maxInFlight = 0
+    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('wikidata.org')) {
+        inFlight++
+        maxInFlight = Math.max(maxInFlight, inFlight)
+        await new Promise((r) => setTimeout(r, 5))
+        inFlight--
+        const id = decodeURIComponent(url.split('/').pop() ?? '').replace(/\.json$/, '')
+        return wikidataResponse(id, 'Esso textlogo.svg')
+      }
+      return overpassResponse([FIXTURE_ESSO, { ...FIXTURE_TOTAL }])
+    })
+    const provider = createOsmMetadataProvider({ fetchFn, logoConcurrency: 2 })
+
+    const result = await provider.findMetadataFor(['77400012', '91170006'])
+
+    expect(maxInFlight).toBeLessThanOrEqual(2)
+    expect(result.every((r) => r.logoUrl?.includes('upload.wikimedia.org'))).toBe(true)
+  })
 })
 
 describe('buildLogoUrl (résolution logo Wikimedia)', () => {

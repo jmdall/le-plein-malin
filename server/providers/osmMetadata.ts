@@ -24,6 +24,10 @@ export const OVERPASS_USER_AGENT = 'je-fais-le-plein-ou-non/1.0 (recherche prix 
 // Un lot de 2000 ids ≈ 7-10 s sur overpass-api.de (vérifié). On ne dépasse
 // jamais un fetch par station (NFR-PERF-2) : un fetch par lot au pire.
 export const OVERPASS_QUERY_BATCH_SIZE = 2000
+// Concurrence max des résolutions de logo Wikidata : au-delà, Wikidata
+// limite (429) et tous les logos échouent (vérifié : 5700 fetch simultanés
+// → 0 logo). Un pool borné préserve le best-effort sans saturer la source.
+export const LOGO_FETCH_CONCURRENCY = 8
 
 export type FetchLike = typeof fetch
 
@@ -34,6 +38,8 @@ export interface OsmMetadataOptions {
   // Taille de lot Overpass (défaut OVERPASS_QUERY_BATCH_SIZE) — injectable pour
   // les tests.
   batchSize?: number
+  // Concurrence max des résolutions de logo (défaut LOGO_FETCH_CONCURRENCY).
+  logoConcurrency?: number
   // Nombre de tentatives d'un lot Overpass (défaut 3). Overpass est
   // intermittent (504/429) : on retente avant de se rabattre sur le repli 017.
   retries?: number
@@ -100,6 +106,7 @@ export function createOsmMetadataProvider(
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS
   const logoTimeoutMs = options.logoTimeoutMs ?? LOGO_FETCH_TIMEOUT_MS
   const batchSize = options.batchSize ?? OVERPASS_QUERY_BATCH_SIZE
+  const logoConcurrency = options.logoConcurrency ?? LOGO_FETCH_CONCURRENCY
   const retries = options.retries ?? 3
   const retryDelayMs = options.retryDelayMs ?? 800
   const fetchFn = options.fetchFn ?? globalThis.fetch
@@ -201,12 +208,26 @@ export function createOsmMetadataProvider(
       const flattened = results.flat()
 
       // Logo best-effort : jamais bloquant (Wikidata indisponible → null).
-      const resolved = await Promise.all(
-        flattened.map(async (meta) => ({
-          ...meta,
-          logoUrl: await resolveLogo(meta.brandWikidataId)
-        }))
+      // Pool borné (LOGO_FETCH_CONCURRENCY) : éviter de marteler Wikidata —
+      // 5700 fetch simultanés → 429 massifs et 0 logo (vérifié).
+      const resolved: StationMetadata[] = new Array(flattened.length)
+      let cursor = 0
+      async function worker() {
+        while (true) {
+          const index = cursor++
+          if (index >= flattened.length) return
+          const meta = flattened[index]!
+          resolved[index] = {
+            ...meta,
+            logoUrl: await resolveLogo(meta.brandWikidataId)
+          }
+        }
+      }
+      const workers = Array.from(
+        { length: Math.min(logoConcurrency, Math.max(1, flattened.length)) },
+        () => worker()
       )
+      await Promise.all(workers)
       return resolved
     }
   }
