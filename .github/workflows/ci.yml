@@ -61,8 +61,11 @@ jobs:
           cache: npm
       - uses: actions/setup-java@v4
         with:
+          # Capacitor 8 compile le code Android en source-level 21
+          # (compileDebugJavaWithJavac) : Java 17 échoue avec
+          # « invalid source release: 21 ».
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - uses: android-actions/setup-android@v3
       - run: npm ci
       - name: Build statique Nuxt (webDir .output/public)
