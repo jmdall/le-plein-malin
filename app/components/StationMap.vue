@@ -6,6 +6,12 @@
 // (mêmes stations que la liste — aucun appel API supplémentaire, aucun service
 // cartographique payant : tuiles OSM libres).
 //
+// Recherche au déplacement (demande produit « déplacer la carte devrait
+// afficher les stations ») : un pan utilisateur (dragend) émet `recenter` avec
+// le centre du viewport ; la page relance la recherche (recommandation +
+// stations) autour de ce point. Uniquement le drag réel — jamais les flyTo
+// programmatiques (clic marqueur, recentrage, nouvelle recherche).
+//
 // Accessibilité (NFR-ACC-1/2/4, NFR-PWA-2, NFR-RES-1/2) :
 //   - sans JavaScript (SSR), seule la liste de repli est rendue : la carte
 //     reste lisible sans JS (NFR-PWA-2) ;
@@ -29,6 +35,20 @@ const props = defineProps<{
   result: StationsQueryResult | null
   recommendedStationId?: string | null
 }>()
+
+// ——— Recherche au déplacement (demande produit : déplacer la carte doit
+// afficher les stations de la nouvelle zone). Un pan utilisateur émet
+// `recenter` avec le centre du viewport ; la page relance la recherche
+// (recommandation + stations) autour de ce point. On écoute `dragend`
+// (uniquement un déplacement réel au doigt/souris — jamais un flyTo
+// programmatique : clic marqueur, recentrage, nouvelle recherche), avec un
+// debounce pour coalescer les pans rapides et un seuil de distance pour ne
+// pas rejouer la même recherche pour un micro-déplacement. ———
+const emit = defineEmits<{
+  recenter: [{ lat: number; lon: number }]
+}>()
+
+let recenterTimer: ReturnType<typeof setTimeout> | null = null
 
 const containerRef = ref<HTMLDivElement | null>(null)
 const mapReady = ref(false)
@@ -92,7 +112,11 @@ watch(
 
 // ——— Recentre la carte déjà montée quand la position de recherche change
 // (nouvelle recherche, bouton « Recentrer sur ma position »). On évite de
-// rejouer un flyTo identique à chaque simple rafraîchissement de marqueurs. ———
+// rejouer un flyTo identique à chaque simple rafraîchissement de marqueurs.
+// Comparaison sur lat/lon SEULS (le zoom de `view.center` est toujours le zoom
+// de départ MAP_START_ZOOM, alors que `lastFlownCenter` porte le zoom réel de
+// la carte après un pan/zoom utilisateur) : un même centre n'est jamais
+// re-flyé, et le flyTo garde le zoom courant via Math.max. ———
 function recenterIfNeeded() {
   if (!map) return
   const center = view.value.center
@@ -100,13 +124,66 @@ function recenterIfNeeded() {
   if (
     lastFlownCenter &&
     lastFlownCenter.lat === center.lat &&
-    lastFlownCenter.lon === center.lon &&
-    lastFlownCenter.zoom === center.zoom
+    lastFlownCenter.lon === center.lon
   ) {
     return
   }
+  // Un re-centrage programmatique arrive justement sur le centre de recherche :
+  // le `dragend` d'un éventuel pan en cours n'étant pas concerné, rien à
+  // supprimer ici. On annule simplement un debounce de pan en cours pour ne
+  // pas rejouer l'ancien centre.
+  cancelRecenter()
   lastFlownCenter = center
   map.flyTo([center.lat, center.lon], Math.max(map.getZoom(), center.zoom))
+}
+
+// ——— Fin d'un pan utilisateur → recherche au nouveau centre ———
+// `dragend` est déclenché à la fin d'un drag réel ; l'évènement porte le
+// centre courant du viewport. Un seuil de distance (relative au rayon affiché
+// à l'écran) évite de relancer une recherche quasi identique pour un
+// micro-déplacement ; le debounce coalesce les drags rapides.
+const RECENTER_DEBOUNCE_MS = 500
+const RECENTER_MIN_DRAG_FRACTION = 0.15
+let lastRecenterCenter: { lat: number; lon: number } | null = null
+
+function onMapDragEnd() {
+  if (!map) return
+  const center = map.getCenter()
+  const centerLat = center.lat
+  const centerLng = center.lng
+  const zoom = map.getZoom()
+  // Le pan « réclame » le centre courant : quand les nouvelles données
+  // arrivent avec query.center = ce centre, recenterIfNeeded ne doit pas
+  // rejouer un flyTo (il ne ferait que lutter contre le déplacement).
+  lastFlownCenter = { lat: centerLat, lon: centerLng, zoom }
+  // Largeur d'écran en km au zoom courant — borne la « taille » d'un drag
+  // en coordonnées monde pour le seuil relatif.
+  const metersPerPixel = 40075016.686 * Math.cos((centerLat * Math.PI) / 180) / Math.pow(2, zoom + 8)
+  const viewportWidthKm = (metersPerPixel / 1000) * (map.getSize().x || 0)
+  const thresholdKm = viewportWidthKm * RECENTER_MIN_DRAG_FRACTION
+
+  if (
+    lastRecenterCenter &&
+    Math.abs(centerLat - lastRecenterCenter.lat) < thresholdKm / 111 &&
+    Math.abs(centerLng - lastRecenterCenter.lon) < thresholdKm / 111
+  ) {
+    return
+  }
+  lastRecenterCenter = { lat: centerLat, lon: centerLng }
+
+  cancelRecenter()
+  recenterTimer = setTimeout(() => {
+    recenterTimer = null
+    lastRecenterCenter = null
+    emit('recenter', { lat: centerLat, lon: centerLng })
+  }, RECENTER_DEBOUNCE_MS)
+}
+
+function cancelRecenter() {
+  if (recenterTimer !== null) {
+    clearTimeout(recenterTimer)
+    recenterTimer = null
+  }
 }
 
 async function ensureMap() {
@@ -162,6 +239,12 @@ async function ensureMap() {
     // réapparaissent aussitôt.
     map.on('zoomend', () => syncMarkers())
 
+    // Recherche au déplacement : `dragend` ne se déclenche QUE pour un pan
+    // réel de l'utilisateur (doigt/souris), jamais pour un flyTo programmatique
+    // (clic marqueur, recentrage, nouvelle recherche). Debounce + seuil de
+    // distance pour ne pas spammer l'API pendant un pan continu.
+    map.on('dragend', onMapDragEnd)
+
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => map?.invalidateSize())
       resizeObserver.observe(containerRef.value)
@@ -183,15 +266,13 @@ function accessibleName(marker: StationMapMarker): string {
 
 // ——— Marqueur cluster (regroupement des marqueurs superposés ; demande
 // produit + design ui-reference.md §5 « Clusters — disques pleins terracotta
-// avec le nombre de stations »). Le chiffre est TOUJOURS doublé de texte
-// (NFR-ACC-4 : la couleur n'est jamais le seul vecteur) et le cluster est
-// un vrai point Leaflet : focusable au clavier et cliquable pour zoomer vers
-// son centroïde. ———
+// avec le nombre de stations »). Le cluster est un vrai point Leaflet :
+// focusable au clavier et cliquable pour zoomer vers son centroïde.
+// L'accessibilité (NFR-ACC-4 : la couleur n'est jamais le seul vecteur) est
+// portée par le nom accessible du marker, pas par un label visuel. ———
 function makeIconCluster(cluster: StationCluster, L: typeof import('leaflet')) {
   const count = cluster.markerIds.length
-  const html =
-    `<span class="jflp-cluster" aria-hidden="true">${count}</span>` +
-    `<span class="jflp-cluster-label">${count} stations</span>`
+  const html = `<span class="jflp-cluster" aria-hidden="true">${count}</span>`
   return L.divIcon({
     className: 'jflp-cluster-marker',
     html,
@@ -370,6 +451,7 @@ function syncMarkers() {
 }
 
 onBeforeUnmount(() => {
+  cancelRecenter()
   resizeObserver?.disconnect()
   resizeObserver = null
   if (map) {
@@ -617,11 +699,11 @@ onBeforeUnmount(() => {
 /* ═══ Clusters — regroupement des marqueurs superposés (design
    ui-reference.md §5 : « disques pleins terracotta avec le nombre de
    stations, texte blanc »). L'icône Leaflet est un point 0×0 recentré par
-   translate(-50%, -50%) ; le disque porte le nombre ET un libellé texte
-   (NFR-ACC-4 : jamais la couleur seule), le nom accessible est porté par le
-   marker. Paire de tokens --terracotta-fill / --terracotta-on-fill : fond
-   terracotta avec du texte blanc, lisible (5,8:1). Identique en clair et en
-   sombre (posé sur les tuiles OSM claires, comme les marqueurs de prix). */
+   translate(-50%, -50%) ; le disque porte le nombre (NFR-ACC-4 : jamais la
+   couleur seule), le nom accessible est porté par le marker. Paire de tokens
+   --terracotta-fill / --terracotta-on-fill : fond terracotta avec du texte
+   blanc, lisible (5,8:1). Identique en clair et en sombre (posé sur les
+   tuiles OSM claires, comme les marqueurs de prix). */
 .jflp-cluster-marker {
   width: 0;
   height: 0;
@@ -664,10 +746,6 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-sm);
 }
 .jflp-cluster-marker:focus-visible .jflp-cluster {
-  outline: 2px solid var(--focus);
-  outline-offset: 3px;
-}
-.jflp-cluster-marker:focus-visible .jflp-cluster-label {
   outline: 2px solid var(--focus);
   outline-offset: 3px;
 }

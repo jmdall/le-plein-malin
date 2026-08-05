@@ -41,12 +41,26 @@ const searchMessage = ref<string | null>(null)
 const appliedLocation = ref<{ label: string; mode: 'geo' | 'query' } | null>(null)
 const stationsRequest = ref<StationsRequest | null>(null)
 
+// Recherche au déplacement de la carte : un seul vol en cours à la fois — si
+// un pan arrive pendant une recherche, on retient le dernier centre et on le
+// rejoue dès que la recherche en cours se termine (sinon les appels API se
+// chevauchent et le dernier répondeur — pas forcément le dernier centre —
+// gagnerait).
+const mapRecenterInFlight = ref(false)
+const mapRecenterPending = ref<{ lat: number; lon: number } | null>(null)
+
 // ——— Déclenche une recherche avec un payload RecommendationRequest ———
-async function run(request: RecommendationRequest, label: string, mode: 'geo' | 'query') {
+async function run(
+  request: RecommendationRequest,
+  label: string,
+  mode: 'geo' | 'query',
+  options?: { preserveSheet?: boolean }
+) {
   // Une recherche montre ses résultats : on ouvre la feuille (elle a pu être
   // repliée au premier affichage pour laisser la place à la bannière de
-  // consentement — voir onMounted).
-  if (sheetState.value === 'collapsed') {
+  // consentement — voir onMounted). Sauf sur un déplacement de carte : la
+  // feuille ne doit pas recouvrir la zone que l'utilisateur vient d'explorer.
+  if (!options?.preserveSheet && sheetState.value === 'collapsed') {
     sheetState.value = 'medium'
   }
   appliedLocation.value = { label, mode }
@@ -59,6 +73,41 @@ async function run(request: RecommendationRequest, label: string, mode: 'geo' | 
     q: request.q,
     city: request.city,
     postalCode: request.postalCode
+  }
+}
+
+// ——— Déplacement de la carte (pan) : relance la recherche autour du nouveau
+// centre (demande produit « déplacer la carte devrait afficher les stations »).
+// Le pan émet un centre lat/lon explicite : on relance la recommandation ET
+// la liste des stations avec la même position/rayon/carburant que la recherche
+// en cours, sans inventer de label — `appliedLocation` conserve la recherche
+// explicite (géo ou ville) qui a donné cette zone. Un seul vol en cours à la
+// fois : si un pan arrive pendant une recherche, on retient le dernier centre
+// et on le rejoue dès que la recherche en cours se termine (sinon les appels
+// API se chevauchent et le dernier répondeur — pas forcément le dernier
+// centre — gagnerait). ———
+async function onMapRecenter(center: { lat: number; lon: number }) {
+  if (mapRecenterInFlight.value) {
+    mapRecenterPending.value = center
+    return
+  }
+  mapRecenterInFlight.value = true
+  await run(
+    {
+      lat: center.lat,
+      lon: center.lon,
+      radius: prefs.radius.value,
+      fuel: prefs.fuel.value
+    },
+    appliedLocation.value?.label ?? '',
+    appliedLocation.value?.mode ?? 'geo',
+    { preserveSheet: true }
+  )
+  mapRecenterInFlight.value = false
+  if (mapRecenterPending.value) {
+    const next = mapRecenterPending.value
+    mapRecenterPending.value = null
+    void onMapRecenter(next)
   }
 }
 
@@ -342,6 +391,7 @@ const bottomOverlaysHidden = computed(() => isMobile.value && sheetState.value =
       class="map-layer"
       :result="stationsData"
       :recommended-station-id="recommendedStationId"
+      @recenter="onMapRecenter"
     />
 
     <!-- Overlay haut : recherche + carburant -->

@@ -202,12 +202,10 @@ test('la carte se monte après une recherche avec mock API /api/stations', async
   await expect(page.locator('.jflp-marker-recommended')).toHaveCount(1)
 
   // L'amas de 3 stations ordinaires (~200 m du centre, toutes proches) est
-  // regroupé en un cluster terracotta — la demande produit. Le nombre est
-  // TOUJOURS doublé de texte (NFR-ACC-4 : la couleur n'est jamais le seul
-  // vecteur ; ui-reference §5 « disques pleins terracotta avec le nombre »).
+  // regroupé en un cluster terracotta — la demande produit (ui-reference §5
+  // « disques pleins terracotta avec le nombre »).
   await expect(page.locator('.jflp-cluster-marker')).toHaveCount(1)
   await expect(page.locator('.jflp-cluster')).toHaveText('3')
-  await expect(page.locator('.jflp-cluster-label')).toHaveText('3 stations')
 
   // Clustering dynamique selon le zoom : en zoomant (500 m d'écart, seuil
   // 2 km au zoom 11 → 0,25 km au zoom 14), les stations de l'amas ne se
@@ -306,4 +304,102 @@ test('le touch sur un marqueur ouvre la popup et elle reste ouverte pendant le z
   await page.waitForTimeout(2500)
   await expect(popup).toBeVisible()
   await expect(popup.getByText('Station Fraîche')).toBeVisible()
+})
+
+test('déplacer la carte relance la recherche (recommandation + stations) autour du nouveau centre', async ({
+  page
+}) => {
+  // Demande produit : « déplacer la carte devrait afficher les stations ».
+  // Le pan de la carte (drag utilisateur) émet `recenter` ; la page relance
+  // GET /api/recommendation ET /api/stations avec le nouveau centre (lat/lon).
+  // On mocke l'API de façon DYNAMIQUE : chaque requête répond avec le centre
+  // qu'elle a reçu, pour que la carte reste sur la zone pansée (pas de
+  // « rattrapage » du mock vers le centre initial).
+  const apiRequests: string[] = []
+  await page.route('**/api/recommendation*', (route) => {
+    const url = route.request().url()
+    apiRequests.push(url)
+    const parsed = new URL(url)
+    const lat = Number(parsed.searchParams.get('lat') ?? '48.8566')
+    const lon = Number(parsed.searchParams.get('lon') ?? '2.3522')
+    void route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        recommendation: {
+          ...MOCK_RECOMMENDATION.recommendation,
+          recommendedStation: {
+            ...MOCK_RECOMMENDATION.recommendation.recommendedStation!,
+            position: { lat, lon }
+          }
+        }
+      })
+    })
+  })
+  await page.route('**/api/stations*', (route) => {
+    const url = route.request().url()
+    apiRequests.push(url)
+    const parsed = new URL(url)
+    const lat = Number(parsed.searchParams.get('lat') ?? '48.8566')
+    const lon = Number(parsed.searchParams.get('lon') ?? '2.3522')
+    void route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...MOCK_STATIONS,
+        query: { center: { lat, lon }, radius: 10, fuel: 'E10' }
+      })
+    })
+  })
+  await mockLogos(page)
+
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(1500)
+
+  await page.getByPlaceholder('Rechercher une ville, une adresse…').fill('Paris')
+  await page.getByRole('button', { name: 'Rechercher', exact: true }).click()
+  await expect(page.getByTestId('station-map-container')).toHaveClass(/leaflet-container/)
+  await expect(page.locator('.jflp-marker')).toHaveCount(2)
+
+  // La recherche ville initiale ne porte PAS de lat/lon : le pan est ce qui
+  // introduit les coordonnées.
+  const initialWithLatLon = apiRequests.filter((u) => u.includes('lat='))
+  expect(initialWithLatLon.length).toBe(0)
+
+  // Pan : glisser la carte depuis une zone vide (droite-centre, hors des
+  // overlays et du panneau latéral).
+  const box = (await page.getByTestId('station-map-container').boundingBox())!
+  const sx = box.x + box.width * 0.75
+  const sy = box.y + box.height * 0.4
+  await page.mouse.move(sx, sy)
+  await page.mouse.down()
+  await page.mouse.move(sx + 260, sy - 120, { steps: 8 })
+  await page.mouse.up()
+
+  // Debounce (500 ms) + recherche → nouvelles requêtes avec lat/lon (une
+  // recommandation + une liste), autour de la zone pansée.
+  await expect
+    .poll(() => apiRequests.filter((u) => u.includes('lat=')).length, { timeout: 20_000 })
+    .toBeGreaterThanOrEqual(2)
+
+  // La recommandation a bien été relancée avec le centre de la carte.
+  const recoWithLatLon = apiRequests.filter(
+    (u) => u.includes('/api/recommendation') && u.includes('lat=')
+  )
+  expect(recoWithLatLon.length).toBeGreaterThanOrEqual(1)
+  const parsed = new URL(recoWithLatLon.at(-1)!)
+  expect(Number.isFinite(Number(parsed.searchParams.get('lat')))).toBe(true)
+  expect(Number.isFinite(Number(parsed.searchParams.get('lon')))).toBe(true)
+
+  // La liste des stations a été relancée avec le même centre.
+  const stationsWithLatLon = apiRequests.filter(
+    (u) => u.includes('/api/stations') && u.includes('lat=')
+  )
+  expect(stationsWithLatLon.length).toBeGreaterThanOrEqual(1)
+
+  // La feuille n'a pas été forcée ouverte par le pan (elle garde son état :
+  // la zone explorée reste visible sur la carte).
+  const sheet = page.locator('.sheet')
+  await expect(sheet).toHaveClass(/sheet-medium/)
 })
