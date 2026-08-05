@@ -1,8 +1,15 @@
 # Dockerfile — « Je fais le plein ou non ? »
 # Build de production Nuxt/Nitro en deux étapes (build + runtime Node).
 
+# Le stage build a besoin des outils de compilation : better-sqlite3 est un
+# module natif (node-gyp) qui compile à l'installation et exige Python + gcc.
+# Le module compilé est bundlé par Nitro dans .output — le runtime n'en a pas
+# besoin.
 FROM node:22-alpine AS build
 WORKDIR /app
+
+# python3 + make + g++ : outils node-gyp pour better-sqlite3.
+RUN apk add --no-cache python3 make g++
 
 COPY package.json package-lock.json* ./
 RUN npm install
