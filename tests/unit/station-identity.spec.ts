@@ -7,7 +7,7 @@ import {
   identityBadgeFor,
   isSafeLogoUrl,
   OSM_ATTRIBUTION_NOTE
-} from '../../utils/stationIdentity'
+} from '../../app/utils/stationIdentity'
 
 describe('isSafeLogoUrl (ticket 021)', () => {
   it('accepte uniquement https sur upload.wikimedia.org', () => {

@@ -2,7 +2,7 @@
 // Google Maps en alternatives). URLs publiques sans clé, aucun service payant
 // (spec §4 #7, D3/ADR-0002).
 import { describe, expect, it } from 'vitest'
-import { buildDirectionsUrl, buildDirectionsLinks } from '../../utils/location'
+import { buildDirectionsUrl, buildDirectionsLinks } from '../../app/utils/location'
 
 const POSITION = { lat: 48.8566, lon: 2.3522 }
 

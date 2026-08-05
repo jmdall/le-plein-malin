@@ -3,8 +3,8 @@
 // L'API est simulée par un fetch stub (aucune règle métier testée ici —
 // les scénarios §13 restent couverts au niveau du module pur).
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { useFuelRecommendation } from '../../composables/useFuelRecommendation'
-import type { Recommendation } from '../../utils/recommendation'
+import { useFuelRecommendation } from '../../app/composables/useFuelRecommendation'
+import type { Recommendation } from '../../app/utils/recommendation'
 
 function makeRecommendation(overrides: Partial<Recommendation> = {}): Recommendation {
   return {

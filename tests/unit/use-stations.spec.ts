@@ -3,8 +3,8 @@
 // recommandation (même position/rayon/carburant). L'API est simulée par un
 // fetch stub — aucune règle métier testée ici.
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { useStations } from '../../composables/useStations'
-import type { ListedStation } from '../../utils/stations'
+import { useStations } from '../../app/composables/useStations'
+import type { ListedStation } from '../../app/utils/stations'
 
 function makeStation(id: string, overrides: Partial<ListedStation> = {}): ListedStation {
   return {

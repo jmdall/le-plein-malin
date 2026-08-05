@@ -4,8 +4,8 @@
 // non-hiérarchique NFR-ACC-4) et le contenu de la popup (nom, prix, distance,
 // fraîcheur, lien itinéraire OSM — pas de service payant).
 import { describe, expect, it } from 'vitest'
-import { buildStationMapView, buildPopupHtml, escapeHtml, MAP_START_ZOOM } from '../../utils/stationMap'
-import type { ListedStation } from '../../utils/stations'
+import { buildStationMapView, buildPopupHtml, escapeHtml, MAP_START_ZOOM } from '../../app/utils/stationMap'
+import type { ListedStation } from '../../app/utils/stations'
 
 function station(id: string, overrides: Partial<ListedStation> = {}): ListedStation {
   return {

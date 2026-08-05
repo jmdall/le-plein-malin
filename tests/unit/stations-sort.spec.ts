@@ -3,7 +3,7 @@
 // référence et non rentables en bas). Fonction pure, aucune règle métier
 // dupliquée : le serveur fournit les grandeurs, ce module ne trie que.
 import { describe, expect, it } from 'vitest'
-import { sortStations, type ListedStation } from '../../utils/stations'
+import { sortStations, type ListedStation } from '../../app/utils/stations'
 
 function station(id: string, overrides: Partial<ListedStation> = {}): ListedStation {
   return {
