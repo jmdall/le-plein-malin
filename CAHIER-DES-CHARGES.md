@@ -339,7 +339,7 @@ Le domaine métier ne doit pas dépendre directement du format gouvernemental.
 
 Utiliser de préférence :
 
-* Nuxt 3 ;
+* Nuxt 4 ;
 * Vue 3 ;
 * TypeScript strict ;
 * Nitro ;
@@ -373,9 +373,14 @@ server/
   repositories/
   jobs/
 
-components/
-pages/
-composables/
+app/
+  components/
+  pages/
+  composables/
+  utils/
+
+shared/
+  types/
 
 docs/
   specs/

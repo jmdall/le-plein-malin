@@ -7,7 +7,7 @@ quand faire le plein, à partir des prix officiels des carburants.
 
 - Cahier des charges : `CAHIER-DES-CHARGES.md`
 - Source de données vérifiée : `docs/research/fuel-data-source.md`
-- Stack cible : Nuxt 3, Vue 3, TypeScript strict, Nitro, SQLite, Drizzle ORM,
+- Stack cible : Nuxt 4, Vue 3, TypeScript strict, Nitro, SQLite, Drizzle ORM,
   Zod, Vitest, Playwright, ESLint, Docker, PWA.
 - Modèle OpenCode obligatoire : `deepseek/deepseek-v4-flash` (API officielle
   DeepSeek, `https://api.deepseek.com/v1`).
@@ -36,7 +36,7 @@ quand faire le plein, à partir des prix officiels des carburants.
 - [ ] `CONTEXT.md` (vocabulaire métier) + ADR structurants
 
 ### Phase 2 — Mise en place du projet
-- [ ] Scaffold Nuxt 3 + TypeScript strict + ESLint + Vitest + Playwright + PWA
+- [ ] Scaffold Nuxt 4 + TypeScript strict + ESLint + Vitest + Playwright + PWA
 - [ ] Drizzle ORM + SQLite (schéma initial)
 - [ ] `.env.example`, `docker-compose.yml`
 

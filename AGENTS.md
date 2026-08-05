@@ -16,6 +16,6 @@ Single-context: one `CONTEXT.md` at repo root + ADRs in `docs/adr/`. See `docs/a
 
 - Model obligatoire pour OpenCode : `deepseek/deepseek-v4-flash` (API officielle DeepSeek, `https://api.deepseek.com/v1`). Ne jamais basculer sur un autre modèle.
 - Skills Matt Pocock : `.agents/skills/` (installés par `npx skills add mattpocock/skills`).
-- Stack cible : Nuxt 3, Vue 3, TypeScript strict, Nitro, SQLite, Drizzle ORM, Zod, Vitest, Playwright, ESLint, Docker, PWA.
+- Stack cible : Nuxt 4 (structure `app/` + `server/` + `shared/`), Vue 3, TypeScript strict, Nitro, SQLite, Drizzle ORM, Zod, Vitest, Playwright, ESLint, Docker, PWA.
 - La logique de recommandation est un module métier pur (`calculateFuelRecommendation`) : aucune dépendance Nuxt/HTTP/SQLite/env.
 - TDD obligatoire pour toute règle métier. Git : commits locaux petits, pas de push, pas de PR.

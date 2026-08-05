@@ -32,8 +32,22 @@ officielle DGCCRF (ou du cache local, signalé comme tel).
 
 ## Stack
 
-Nuxt 3 · Vue 3 · TypeScript strict · Nitro · SQLite (Drizzle ORM) · Zod ·
+Nuxt 4 · Vue 3 · TypeScript strict · Nitro · SQLite (Drizzle ORM) · Zod ·
 Vitest · Playwright · ESLint · Docker · PWA · Leaflet/OSM.
+
+## Structure
+
+Nuxt 4 (`srcDir` = `app/`) :
+
+```
+app/          assets · components · composables · pages · utils · app.vue
+server/       API Nitro, jobs, providers, repositories
+domain/       modules métier purs (aucune dépendance Nuxt/HTTP/SQLite)
+shared/       types partagés app + server
+public/       ressources statiques (offline.html, icônes)
+tests/        unitaires (Vitest) + e2e (Playwright)
+docs/         spec, ADR, tickets, recherche, agents
+```
 
 ## Prérequis
 
@@ -164,7 +178,7 @@ pondération par ancienneté). Les formulations restent probabilistes
 - `docs/specs/grill-decisions.md` — décisions bloquantes (D1–D6)
 - `docs/research/fuel-data-source.md` — source officielle vérifiée
 - `docs/adr/` — décisions d'architecture (0001–0004)
-- `docs/tickets/` — tickets (001–015)
+- `docs/tickets/` — tickets (001–022)
 - `CONTEXT.md` — vocabulaire métier
 - `PLAN.md` — plan d'exécution
 

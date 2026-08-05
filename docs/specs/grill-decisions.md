@@ -239,7 +239,7 @@ Ces points ont été lus et **ne sont pas re-demander** (rien d'inutile) :
 | 7 | Aucun prix inventé ; source officielle | §5, §10 |
 | 8 | Source officielle = DGCCRF (data.economie.gouv.fr) | §10, docs/research |
 | 9 | Abstraction `FuelPriceProvider`, domaine indépendant du format | §10 |
-| 10 | Stack : Nuxt 3, Vue 3, TS strict, Nitro, SQLite, Drizzle, Zod, Vitest, Playwright, ESLint, Docker, PWA | §11 |
+| 10 | Stack : Nuxt 4, Vue 3, TS strict, Nitro, SQLite, Drizzle, Zod, Vitest, Playwright, ESLint, Docker, PWA | §11 |
 | 11 | Cartographie : OpenStreetMap, pas de services payants | §11 |
 | 12 | Carburants : SP95, SP95-E10, SP98, E85, Gazole, GPLc | §6 |
 | 13 | Rayons : 5, 10, 20, 30 km ; recherche ville / code postal | §6 |

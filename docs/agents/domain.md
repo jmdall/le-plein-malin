@@ -9,4 +9,4 @@
   - When a decision changes a documented term or architectural constraint, update `CONTEXT.md` / the affected ADR in the same commit.
   - New structuring decisions require a new ADR.
 
-Rationale (ADR-0001): the app is a single Nuxt 3 project; no monorepo signals exist.
+Rationale (ADR-0001): the app is a single Nuxt 4 project; no monorepo signals exist.
