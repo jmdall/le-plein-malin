@@ -85,6 +85,9 @@ export interface NormalizedRecord {
 
 export interface RecordSource {
   id: unknown
+  // Opendatasoft : « adresse » (champ réel de l'API et de l'export, vérifié).
+  // « address » reste accepté en secours (forme normalisée interne, tests).
+  adresse?: unknown
   address?: unknown
   // Opendatasoft API : « ville » ; le type « city » est accepté en secours.
   city?: unknown
@@ -120,7 +123,10 @@ export function normalizeRecord(raw: RecordSource, queryFuel: FuelType): Station
   if (typeof id !== 'string' && typeof id !== 'number') return null
   const stationId = String(id)
 
-  const address = typeof raw.address === 'string' ? raw.address : ''
+  // L'adresse réelle (Opendatasoft « adresse », secours « address ») alimente
+  // la dérivation d'enseigne (017) et l'affichage : jamais fabriquée, '' si
+  // absente. Jamais un nom inventé.
+  const address = typeof raw.adresse === 'string' ? raw.adresse : typeof raw.address === 'string' ? raw.address : ''
   const cityValue = typeof raw.ville === 'string' ? raw.ville : raw.city
   const city = typeof cityValue === 'string' ? cityValue : ''
   const postalCode = typeof raw.cp === 'string' ? raw.cp : ''

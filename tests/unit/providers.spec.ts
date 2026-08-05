@@ -109,6 +109,21 @@ describe('normalisation (server/providers/normalize.ts)', () => {
     expect(s!.brand).toBeNull()
   })
 
+  it('conserve l\'adresse réelle du champ Opendatasoft « adresse » (dérivation 017)', () => {
+    const s = normalizeRecord(REAL_RECORD_ROULEZ, 'Gazole')
+    expect(s).not.toBeNull()
+    expect(s!.address).toBe('596 AVENUE DE TREVOUX')
+    expect(s!.city).toBe('SAINT-DENIS-lès-BOURG')
+  })
+
+  it('accepte « address » (forme normalisée) en secours, sinon adresse vide', () => {
+    const withEnglishKey = { ...REAL_RECORD_ROULEZ, adresse: undefined, address: '596 AVENUE DE TREVOUX' }
+    expect(normalizeRecord(withEnglishKey, 'Gazole')!.address).toBe('596 AVENUE DE TREVOUX')
+
+    const noAddress = { ...REAL_RECORD_ROULEZ, adresse: undefined, address: undefined }
+    expect(normalizeRecord(noAddress, 'Gazole')!.address).toBe('')
+  })
+
   it('normalise un record roulez-eco réel (Gazole Bourg-en-Bresse)', () => {
     const s = normalizeRecord(REAL_RECORD_ROULEZ, 'Gazole')
     expect(s).not.toBeNull()
