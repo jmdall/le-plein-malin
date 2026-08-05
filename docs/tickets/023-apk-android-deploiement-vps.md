@@ -56,7 +56,7 @@ de base, pas de Postgres.
       (`{"status":"ok","lastSync":...}`) → l'APK peut appeler l'API.
 - [x] Un APK debug téléchargé depuis l'onglet Actions s'installe sur un Android
       (sideload) et affiche une recommandation (API VPS joignable). Build
-      `31007646694` vert, `NUXT_PUBLIC_API_BASE=https://api.example.com`
+      `31007646694` vert, `NUXT_PUBLIC_API_BASE=<url publique du backend>`
       injecté, APK ~3,8 Mo publié en artifact.
 - [x] `npm run lint && npm run typecheck && npm run test` passe.
 
@@ -75,7 +75,7 @@ de base, pas de Postgres.
   faible trafic — voir discussion du 05/08). Postgres plus tard si multi-instances.
 - Le `vars.NUXT_PUBLIC_API_BASE` du repo GitHub doit être défini avant que l'APK
   pointe sur la bonne API (sinon l'APK utilise des URL relatives → hors-ligne).
-  **Défini** : `https://api.example.com` (2026-08-05).
+  **Défini** : `NUXT_PUBLIC_API_BASE=<url publique du backend>` (2026-08-05).
 - La sync manuelle (`POST /api/sync`) remplit `stations` mais n'écrit **pas**
   `last_sync` (réservé au job périodique) : `lastSync: null` dans `/api/health`
   est attendu jusqu'au prochain tick du job Nitro (toutes les 2 h).

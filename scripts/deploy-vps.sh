@@ -22,8 +22,8 @@
 #   ref : branche/tag à déployer (défaut : main)
 #
 # Variables d'environnement du script :
-#   VPS_HOST            (requis)  cible SSH, ex. root@203.0.113.10
-#   VPS_DIR             (défaut)  /root/le-plein-malin (répertoire de travail)
+#   VPS_HOST            (requis)  cible SSH, ex. deploy@203.0.113.10
+#   VPS_DIR             (défaut)  /opt/le-plein-malin (répertoire de travail)
 #   VPS_GIT_URL         (défaut)  https://github.com/jmdall/le-plein-malin.git
 #   BUILD_ARGS          (défaut)  --build (désactivable avec BUILD_ARGS="")
 #   FORCE_ENV           (défaut)  false — si true, écrase le .env distant
@@ -31,8 +31,8 @@
 set -euo pipefail
 
 # ——— Configuration ———
-: "${VPS_HOST:?VPS_HOST requis (ex. root@203.0.113.10)}"
-VPS_DIR="${VPS_DIR:-/root/le-plein-malin}"
+: "${VPS_HOST:?VPS_HOST requis (ex. deploy@203.0.113.10)}"
+VPS_DIR="${VPS_DIR:-/opt/le-plein-malin}"
 VPS_GIT_URL="${VPS_GIT_URL:-https://github.com/jmdall/le-plein-malin.git}"
 BUILD_ARGS="${BUILD_ARGS:---build}"
 FORCE_ENV="${FORCE_ENV:-false}"
