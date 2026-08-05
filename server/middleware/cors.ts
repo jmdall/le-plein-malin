@@ -34,8 +34,11 @@ export default defineEventHandler((event) => {
       allowHeaders: ['Content-Type'],
       credentials: false
     })
+    // Retourner une valeur (et non undefined) fait de ce middleware la réponse
+    // complète : h3 n'appelle PAS le handler du routeur, donc le preflight
+    // répond 204 (au lieu de tomber sur le 404 du GET /api/*).
     event.node.res.statusCode = 204
-    return
+    return null
   }
 
   appendCorsHeaders(event, { origin, credentials: false })
