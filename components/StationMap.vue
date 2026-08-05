@@ -614,9 +614,10 @@ html.dark .jflp-map-container .leaflet-control-attribution {
   background: rgba(20, 16, 13, 0.6);
 }
 
-/* Mode sombre : tuiles filtrées (les marqueurs restent identiques, posés sur
-   des tuiles qui restent claires — voir --marker-* dans main.css). */
-html.dark .jflp-map-container .leaflet-tile {
-  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9) saturate(0.8);
-}
+/* Mode sombre : les tuiles OpenStreetMap restent CLAIRES (docs/design/
+   ui-reference.md §« Tokens — marqueurs de prix »). L'ancien filtre
+   invert(1) hue-rotate(180°)… leur donnait l'aspect d'un fond satellite sombre
+   et illisible. Les marqueurs (--marker-*) sont identiques en clair et en
+   sombre, posés sur des tuiles claires : aucun filtre n'est appliqué ici, la
+   carte reste lisible dans les deux thèmes. */
 </style>
