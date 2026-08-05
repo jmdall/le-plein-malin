@@ -42,8 +42,9 @@ de base, pas de Postgres.
       `NUXT_PUBLIC_API_BASE` depuis `vars`), `npx cap add android`, `npx cap
       sync android`, `./gradlew assembleDebug`, `upload-artifact` de
       `app-debug.apk`. Le dossier `android/` est généré, non versionné.
-- [ ] **CI APK vert** sur la première push (le build Gradle n'a pas été testé
-      en local — pas de JDK/Android SDK).
+- [x] **CI APK vert** : job `apk` passe (Java 21 requis par Capacitor 8,
+      `invalid source release: 21` corrigé en dc11130). APK debug ~3,8 Mo
+      publié dans l'onglet Actions (`le-plein-malin-debug.apk`).
 - [ ] **Backend déployé sur le VPS** : `docker compose up --build`, volume
       `sqlite-data` persistant, vars d'env (`DATABASE_PATH`, `SYNC_INTERVAL_HOURS`,
       `FUEL_PRICES_PROVIDER`), sous-domaine HTTPS (reverse proxy + Certbot) qui
