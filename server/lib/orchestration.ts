@@ -16,6 +16,7 @@
 // La position précise de l'utilisateur (lat/lon de la requête) n'est jamais
 // persistée ni loggée (LOC-4, NFR-SEC-4) : seul le centroïde géocodé ou le
 // centre du rayon transite en mémoire.
+import { inArray } from 'drizzle-orm'
 import { haversineKm } from '../../domain/fuel-prices/haversine'
 import { computeFreshness } from '../../domain/fuel-prices/freshness'
 import { computeCandidateEconomics } from '../../domain/fuel-prices/economics'
@@ -33,6 +34,7 @@ import type {
 import { OSM_METADATA_SOURCE_NAME } from '../providers/types'
 import type { FuelPriceProvider, ProviderResult } from '../providers/types'
 import type { Db } from '../db/client'
+import { stations } from '../db/schema'
 import { createStationsRepository } from '../repositories/stations'
 import { createPricesRepository } from '../repositories/prices'
 import { createPriceHistoryRepository } from '../repositories/priceHistory'
@@ -200,12 +202,66 @@ export function toStationPriceWithDistance(s: StationWithDistance): StationPrice
   }
 }
 
+// ——— Enrichissement d'identité côté API (ticket 019/020) ———
+// Le provider de prix (Opendatasoft / export / roulez-eco) renvoie des
+// stations avec name = id et brand = null : le flux officiel ne publie pas
+// les noms réels. L'identité réelle (nom, enseigne, logo) vit en base, posée
+// par le job de sync (019). On la RÉINJECTE ici pour chaque station de la
+// réponse : le client n'a jamais d'id à afficher, quelle que soit la source
+// du provider (REC-2/D1). Best-effort : une station absente de la base garde
+// l'identité du provider (jamais un nom fabriqué) ; un nom réel en base
+// n'est jamais écrasé par un id.
+export async function enrichStationsWithDbIdentity(
+  db: Db,
+  stationsIn: StationPrice[]
+): Promise<StationPrice[]> {
+  if (stationsIn.length === 0) return stationsIn
+  const ids = [...new Set(stationsIn.map((s) => s.id))]
+  const rows = await db
+    .select({
+      id: stations.id,
+      name: stations.name,
+      brand: stations.brand,
+      brandWikidataId: stations.brandWikidataId,
+      logoUrl: stations.logoUrl,
+      address: stations.address,
+      city: stations.city,
+      postalCode: stations.postalCode
+    })
+    .from(stations)
+    .where(inArray(stations.id, ids))
+    .all()
+  const byId = new Map(rows.map((r) => [r.id, r]))
+
+  return stationsIn.map((s) => {
+    const row = byId.get(s.id)
+    if (!row) return s
+    // L'identité de la base prime quand elle est réelle (nom ≠ id ou une
+    // enseigne) ; sinon on garde celle du provider (id par défaut).
+    const dbNameIsReal = row.name !== row.id || row.brand !== null
+    if (!dbNameIsReal) return s
+    return {
+      ...s,
+      name: row.name,
+      brand: row.brand,
+      brandWikidataId: row.brandWikidataId,
+      logoUrl: row.logoUrl,
+      // L'adresse réelle de la base (issue de l'export officiel) complète
+      // celle du provider quand celui-ci n'en fournit pas.
+      address: s.address !== '' ? s.address : row.address,
+      city: s.city !== '' ? s.city : row.city,
+      postalCode: s.postalCode !== '' ? s.postalCode : row.postalCode
+    }
+  })
+}
+
 // ——— Réponse /api/stations (orchestration) ———
 // Réutilise le provider (repli automatique) puis calcule distances/référence.
 export async function buildStationsResponse(options: {
   provider: FuelPriceProvider
   query: StationsQuery
   center: ResolvedCenter
+  db?: Db
 }): Promise<StationsResponse> {
   const { provider, query } = options
   const center = options.center
@@ -216,7 +272,10 @@ export async function buildStationsResponse(options: {
     fuel: query.fuel
   })
 
-  const stations: StationPrice[] = result.stations
+  // Identité réelle depuis la base (019/020) : le client n'affiche jamais l'id.
+  const stations: StationPrice[] = options.db
+    ? await enrichStationsWithDbIdentity(options.db, result.stations)
+    : result.stations
   const withDistance = stations.map((s) => ({
     ...s,
     distanceKm: haversineKm({ lat: center.lat, lon: center.lon }, s.position)
@@ -252,6 +311,7 @@ export async function buildStationsList(options: {
   provider: FuelPriceProvider
   query: StationsQuery
   center: ResolvedCenter
+  db?: Db
   vehicle?: { consumption: number; currentLevel: number; tankCapacity: number }
   now?: () => Date
 }): Promise<StationsListResponse> {
@@ -269,7 +329,10 @@ export async function buildStationsList(options: {
       fuel: query.fuel
     })
 
-    const stations: StationPrice[] = result.stations
+    // Identité réelle depuis la base (019/020) : le client n'affiche jamais l'id.
+    const stations: StationPrice[] = options.db
+      ? await enrichStationsWithDbIdentity(options.db, result.stations)
+      : result.stations
     const withDistance = stations.map((s) => ({
       ...s,
       distanceKm: haversineKm({ lat: center.lat, lon: center.lon }, s.position)
@@ -430,12 +493,17 @@ export async function buildRecommendationResponse(options: {
     fuel: query.fuel
   })
 
+  // Identité réelle depuis la base (019/020) : la recommandation expose les
+  // noms/enseignes réels, jamais l'id (REC-2/D1). Le calcul (prix/distance)
+  // n'est pas affecté.
+  const enriched = await enrichStationsWithDbIdentity(db, result.stations)
+
   // 2. Tendance via l'historique local (005) — sur la station de référence.
   const historyRepo = createPriceHistoryRepository(db)
 
   // La tendance porte sur la station la plus proche du centre (référence).
   // On cherche d'abord la référence dans les stations du provider.
-  const withDistance = result.stations.map((s) => ({
+  const withDistance = enriched.map((s) => ({
     ...s,
     distanceKm: haversineKm({ lat: center.lat, lon: center.lon }, s.position)
   }))
@@ -463,7 +531,7 @@ export async function buildRecommendationResponse(options: {
     fuelType: query.fuel,
     vehicle: options.vehicle,
     center,
-    stations: result.stations,
+    stations: enriched,
     now,
     trend
   })

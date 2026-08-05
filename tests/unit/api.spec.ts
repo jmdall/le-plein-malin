@@ -26,6 +26,7 @@ import {
   buildRecommendationInput,
   buildStationDetailResponse,
   buildTrendResponse,
+  enrichStationsWithDbIdentity,
   createApiError
 } from '../../server/lib/orchestration'
 import { haversineKm } from '../../domain/fuel-prices/haversine'
@@ -727,6 +728,91 @@ describe('API — orchestration (ticket 009, spec §8)', () => {
     const err = createApiError(400, 'VALIDATION_ERROR', 'mauvais rayon')
     expect(err.statusCode).toBe(400)
     expect(err.body).toEqual({ error: { code: 'VALIDATION_ERROR', message: 'mauvais rayon' } })
+  })
+
+  it('enrichStationsWithDbIdentity : le provider renvoie name=id → l\'identité réelle de la base prime', async () => {
+    const h = createTestDb()
+    try {
+      // La base détient l'identité réelle (posée par le sync 019).
+      await createStationsRepository(h.db).upsert({
+        id: 'totale',
+        name: 'TotalEnergies Bailleul',
+        brand: 'TotalEnergies',
+        brandWikidataId: 'Q154037',
+        logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/e/ed/logo.svg',
+        address: '8,10 Rue Bailleul',
+        city: 'PARIS',
+        postalCode: '75001',
+        latitude: 48.861,
+        longitude: 2.341,
+        departmentCode: null,
+        regionCode: null,
+        closed: false,
+        syncedAt: NOW
+      })
+
+      // Le provider (Opendatasoft) renvoie name = id, brand = null, adresse vide.
+      const raw = station('totale', 'Gazole', { name: 'totale', brand: null, address: '' })
+
+      const enriched = await enrichStationsWithDbIdentity(h.db, [raw])
+
+      expect(enriched[0]!.name).toBe('TotalEnergies Bailleul')
+      expect(enriched[0]!.brand).toBe('TotalEnergies')
+      expect(enriched[0]!.brandWikidataId).toBe('Q154037')
+      expect(enriched[0]!.logoUrl).toBe('https://upload.wikimedia.org/wikipedia/commons/e/ed/logo.svg')
+      // L'adresse réelle de la base complète celle que le provider n'a pas.
+      expect(enriched[0]!.address).toBe('8,10 Rue Bailleul')
+      expect(enriched[0]!.city).toBe('PARIS')
+    } finally {
+      h.close()
+    }
+  })
+
+  it('enrichStationsWithDbIdentity : station absente de la base → identité du provider conservée (aucun nom fabriqué)', async () => {
+    const h = createTestDb()
+    try {
+      await seed(h)
+      const raw = station('inconnue', 'Gazole', { name: 'inconnue', brand: null })
+
+      const enriched = await enrichStationsWithDbIdentity(h.db, [raw])
+
+      expect(enriched[0]!.name).toBe('inconnue')
+      expect(enriched[0]!.brand).toBeNull()
+      expect(enriched[0]!.brandWikidataId).toBeUndefined()
+      expect(enriched[0]!.logoUrl).toBeUndefined()
+    } finally {
+      h.close()
+    }
+  })
+
+  it('enrichStationsWithDbIdentity : la base avec name=id ne remplace pas le name réel du provider', async () => {
+    const h = createTestDb()
+    try {
+      // Base non enrichie (name = id, brand null).
+      await createStationsRepository(h.db).upsert({
+        id: 'x',
+        name: 'x',
+        brand: null,
+        address: 'rue X',
+        city: 'Paris',
+        postalCode: '75001',
+        latitude: 48.861,
+        longitude: 2.341,
+        departmentCode: null,
+        regionCode: null,
+        closed: false,
+        syncedAt: NOW
+      })
+
+      // Provider qui fournit déjà un nom réel.
+      const raw = station('x', 'Gazole', { name: 'Station X Réelle', brand: null })
+      const enriched = await enrichStationsWithDbIdentity(h.db, [raw])
+
+      expect(enriched[0]!.name).toBe('Station X Réelle')
+      expect(enriched[0]!.brand).toBeNull()
+    } finally {
+      h.close()
+    }
   })
 })
 

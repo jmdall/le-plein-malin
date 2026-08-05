@@ -64,10 +64,13 @@ export default defineEventHandler(async (event) => {
     }
 
     // 5. Orchestration enrichie (ticket 011) : haversine + référence + STA-1.
+    //    L'identité réelle (nom/enseigne/logo, 019/020) est réinjectée depuis
+    //    la base : le client n'affiche jamais l'id (REC-2/D1).
     const response = await buildStationsList({
       provider,
       query: parsed.data,
       center,
+      db,
       vehicle
     })
 
