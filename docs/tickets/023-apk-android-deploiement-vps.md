@@ -45,15 +45,18 @@ de base, pas de Postgres.
 - [x] **CI APK vert** : job `apk` passe (Java 21 requis par Capacitor 8,
       `invalid source release: 21` corrigé en dc11130). APK debug ~3,8 Mo
       publié dans l'onglet Actions (`le-plein-malin-debug.apk`).
-- [ ] **Backend déployé sur le VPS** : `docker compose up --build`, volume
+- [x] **Backend déployé sur le VPS** : `docker compose up --build`, volume
       `sqlite-data` persistant, vars d'env (`DATABASE_PATH`, `SYNC_INTERVAL_HOURS`,
       `FUEL_PRICES_PROVIDER`), sous-domaine HTTPS (reverse proxy + Certbot) qui
       sert `/api/*`. Le dépôt est **public** : le script `deploy-vps.sh` clone
-      en HTTPS (aucune clé SSH / deploy key requise sur le VPS).
-- [ ] `GET /api/health` répond depuis l'URL publique → l'APK peut appeler l'API.
+      en HTTPS (aucune clé SSH / deploy key requise sur le VPS). Build Docker
+      corrigé : outils node-gyp (python3/make/g++) + `COPY .` avant `npm install`
+      pour le type-check PWA (fdc69e4, 7d6c3a7).
+- [x] `GET /api/health` répond depuis l'URL publique
+      (`{"status":"ok","lastSync":...}`) → l'APK peut appeler l'API.
 - [ ] Un APK debug téléchargé depuis l'onglet Actions s'installe sur un Android
       (sideload) et affiche une recommandation (API VPS joignable).
-- [ ] `npm run lint && npm run typecheck && npm run test` passe.
+- [x] `npm run lint && npm run typecheck && npm run test` passe.
 
 ## Hors périmètre (plus tard)
 
@@ -70,3 +73,7 @@ de base, pas de Postgres.
   faible trafic — voir discussion du 05/08). Postgres plus tard si multi-instances.
 - Le `vars.NUXT_PUBLIC_API_BASE` du repo GitHub doit être défini avant que l'APK
   pointe sur la bonne API (sinon l'APK utilise des URL relatives → hors-ligne).
+  **Défini** : `https://api.example.com` (2026-08-05).
+- La sync manuelle (`POST /api/sync`) remplit `stations` mais n'écrit **pas**
+  `last_sync` (réservé au job périodique) : `lastSync: null` dans `/api/health`
+  est attendu jusqu'au prochain tick du job Nitro (toutes les 2 h).
