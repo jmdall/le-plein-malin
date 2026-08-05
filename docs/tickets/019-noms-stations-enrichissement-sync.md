@@ -1,7 +1,7 @@
 ---
 id: 019
 titre: Noms réels et logos des stations — enrichissement à la synchronisation
-statut: ready-for-agent
+statut: done
 dependances:
   - "017"
   - "018"

@@ -1,7 +1,7 @@
 ---
 id: 018
 titre: Noms réels et logos des stations — provider OSM (Overpass + logos Wikidata)
-statut: ready-for-agent
+statut: done
 dependances:
   - "016"
 priorite: P1

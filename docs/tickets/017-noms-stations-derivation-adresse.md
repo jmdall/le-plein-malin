@@ -1,7 +1,7 @@
 ---
 id: 017
 titre: Noms réels et logos des stations — dérivation d'enseigne par libellé d'adresse
-statut: ready-for-agent
+statut: done
 dependances:
   - "016"
 priorite: P1

@@ -1,7 +1,7 @@
 ---
 id: 020
 titre: Noms réels et logos des stations — API (payloads enrichis)
-statut: ready-for-agent
+statut: done
 dependances:
   - "019"
 priorite: P1

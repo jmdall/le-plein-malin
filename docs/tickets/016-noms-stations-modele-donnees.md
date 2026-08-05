@@ -1,7 +1,7 @@
 ---
 id: 016
 titre: Noms réels et logos des stations — modèle de données enrichi
-statut: ready-for-agent
+statut: done
 dependances:
   - "012"
 priorite: P1

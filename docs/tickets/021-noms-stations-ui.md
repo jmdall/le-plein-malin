@@ -1,7 +1,7 @@
 ---
 id: 021
 titre: Noms réels et logos des stations — affichage dans l'interface
-statut: ready-for-agent
+statut: done
 dependances:
   - "020"
 priorite: P1
