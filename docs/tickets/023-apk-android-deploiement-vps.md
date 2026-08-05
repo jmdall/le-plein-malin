@@ -56,9 +56,19 @@ de base, pas de Postgres.
       (`{"status":"ok","lastSync":...}`) → l'APK peut appeler l'API.
 - [x] Un APK debug téléchargé depuis l'onglet Actions s'installe sur un Android
       (sideload) et affiche une recommandation (API VPS joignable). Build
-      `31007646694` vert, `NUXT_PUBLIC_API_BASE=<url publique du backend>`
-      injecté, APK ~3,8 Mo publié en artifact.
+      `31009967577` vert, `apiBase:"https://api-plein.jmdall.fr"` inliné dans le
+      bundle APK (vérifié), APK ~3,8 Mo publié en artifact.
 - [x] `npm run lint && npm run typecheck && npm run test` passe.
+
+## Bug corrigé (APK « 0 station »)
+
+La base URL n'était pas injectée dans l'APK : `app/utils/api.ts` lisait
+`import.meta.env.NUXT_PUBLIC_API_BASE`, que Nuxt n'inline pas. Fix : lecture via
+`useRuntimeConfig().public.apiBase` (runtimeConfig dans `nuxt.config.ts`), repli
+`import.meta.env` pour les tests. Vérifié : `apiBase:"https://api-plein.jmdall.fr"`
+présent dans l'`index.html` de l'APK (build `31009967577`). Le CORS (middleware
+`server/middleware/cors.ts`, preflight OPTIONS → 204) est aussi requis pour la
+WebView Capacitor (origin `https://localhost`).
 
 ## Hors périmètre (plus tard)
 
