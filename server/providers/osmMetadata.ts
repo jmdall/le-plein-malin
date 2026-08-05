@@ -17,6 +17,13 @@ const WIKIDATA_ENTITY_URL = 'https://www.wikidata.org/wiki/Special:EntityData'
 const WIKIMEDIA_UPLOAD_URL = 'https://upload.wikimedia.org/wikipedia/commons'
 const REQUEST_TIMEOUT_MS = 20_000
 const LOGO_FETCH_TIMEOUT_MS = 10_000
+// Overpass exige un User-Agent explicite (les requêtes sans UA sont rejetées
+// en 406) : on l'identifie, jamais un client générique (politique Overpass).
+export const OVERPASS_USER_AGENT = 'je-fais-le-plein-ou-non/1.0 (recherche prix carburants)'
+// Taille de lot Overpass : la requête groupée est bornée (URL + temps serveur).
+// Un lot de 2000 ids ≈ 7-10 s sur overpass-api.de (vérifié). On ne dépasse
+// jamais un fetch par station (NFR-PERF-2) : un fetch par lot au pire.
+export const OVERPASS_QUERY_BATCH_SIZE = 2000
 
 export type FetchLike = typeof fetch
 
@@ -24,6 +31,15 @@ export interface OsmMetadataOptions {
   overpassUrl?: string
   timeoutMs?: number
   logoTimeoutMs?: number
+  // Taille de lot Overpass (défaut OVERPASS_QUERY_BATCH_SIZE) — injectable pour
+  // les tests.
+  batchSize?: number
+  // Nombre de tentatives d'un lot Overpass (défaut 3). Overpass est
+  // intermittent (504/429) : on retente avant de se rabattre sur le repli 017.
+  retries?: number
+  // Délai entre tentatives en ms (défaut 800) — évite de marteler une source
+  // chargée.
+  retryDelayMs?: number
   fetchFn?: FetchLike
 }
 
@@ -83,6 +99,9 @@ export function createOsmMetadataProvider(
   const overpassUrl = options.overpassUrl ?? OVERPASS_API_URL
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS
   const logoTimeoutMs = options.logoTimeoutMs ?? LOGO_FETCH_TIMEOUT_MS
+  const batchSize = options.batchSize ?? OVERPASS_QUERY_BATCH_SIZE
+  const retries = options.retries ?? 3
+  const retryDelayMs = options.retryDelayMs ?? 800
   const fetchFn = options.fetchFn ?? globalThis.fetch
 
   // Résout le logo d'un brand:wikidata (P154) — best-effort, jamais bloquant.
@@ -124,35 +143,66 @@ export function createOsmMetadataProvider(
       const ids = dedupe(stationIds)
       if (ids.length === 0) return []
 
-      // Requête groupée Overpass : les ids en valeurs (NFR-PERF-2, un seul
-      // appel). `out tags` ne retourne que les tags (léger), sans bbox — la
-      // recherche est globale, le matching est 1:1 par id.
-      const query =
-        `[out:json][timeout:20];node["amenity"="fuel"]` +
-        `["ref:FR:prix-carburants"~"^(${ids.join('|')})$"];out tags;`
-
-      let elements: StationMetadata[]
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), timeoutMs)
-      try {
-        const res = await fetchFn(overpassUrl, {
-          method: 'POST',
-          body: `data=${encodeURIComponent(query)}`,
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          signal: controller.signal
-        })
-        if (!res.ok) return []
-        const json = (await res.json()) as OverpassResponse
-        elements = parseOverpassResponse(json)
-      } catch {
-        // Overpass indisponible / timeout / JSON invalide : [] (repli 017).
-        return []
-      } finally {
-        clearTimeout(timer)
+      // Requêtes groupées par lot (NFR-PERF-2 : jamais un fetch par station).
+      // La liste des ids en valeurs, bornée par lot : un fetch par lot au pire.
+      const batches: string[][] = []
+      for (let i = 0; i < ids.length; i += batchSize) {
+        batches.push(ids.slice(i, i + batchSize))
       }
 
+      const results: StationMetadata[][] = []
+      for (const batch of batches) {
+        // Requête Overpass groupée. `out tags` ne retourne que les tags
+        // (léger), sans bbox — la recherche est globale, matching 1:1 par id.
+        const query =
+          `[out:json][timeout:20];node["amenity"="fuel"]` +
+          `["ref:FR:prix-carburants"~"^(${batch.join('|')})$"];out tags;`
+
+        // Overpass est intermittent (504/429) : on retente avant de rendre un
+        // lot vide. Jamais un fetch par station (NFR-PERF-2) — retentative du
+        // lot groupé, pas de nouveaux appels unitaires.
+        let elements: StationMetadata[] = []
+        for (let attempt = 0; attempt < retries; attempt++) {
+          const controller = new AbortController()
+          const timer = setTimeout(() => controller.abort(), timeoutMs)
+          try {
+            const res = await fetchFn(overpassUrl, {
+              method: 'POST',
+              body: `data=${encodeURIComponent(query)}`,
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                // User-Agent obligatoire (politique Overpass) : sans lui, HTTP
+                // 406 et la résolution silencieusement échoue (ticket 019).
+                'User-Agent': OVERPASS_USER_AGENT
+              },
+              signal: controller.signal
+            })
+            if (!res.ok) {
+              // 504/429/406 : transitoire, on retente (puis [] en dernier recours).
+              if (attempt < retries - 1) await sleep(retryDelayMs)
+              continue
+            }
+            const json = (await res.json()) as OverpassResponse
+            elements = parseOverpassResponse(json)
+            break
+          } catch {
+            // Overpass indisponible / timeout / JSON invalide : retentative,
+            // puis [] (repli 017).
+            if (attempt < retries - 1) await sleep(retryDelayMs)
+            continue
+          } finally {
+            clearTimeout(timer)
+          }
+        }
+
+        results.push(elements)
+      }
+
+      const flattened = results.flat()
+
+      // Logo best-effort : jamais bloquant (Wikidata indisponible → null).
       const resolved = await Promise.all(
-        elements.map(async (meta) => ({
+        flattened.map(async (meta) => ({
           ...meta,
           logoUrl: await resolveLogo(meta.brandWikidataId)
         }))
@@ -164,4 +214,8 @@ export function createOsmMetadataProvider(
 
 function dedupe(ids: string[]): string[] {
   return [...new Set(ids)]
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }

@@ -8,7 +8,9 @@ import { createHash } from 'node:crypto'
 import {
   createOsmMetadataProvider,
   buildLogoUrl,
-  parseOverpassResponse
+  parseOverpassResponse,
+  OVERPASS_USER_AGENT,
+  OVERPASS_QUERY_BATCH_SIZE
 } from '../../server/providers/osmMetadata'
 import { OSM_METADATA_SOURCE_NAME } from '../../server/providers'
 
@@ -259,6 +261,71 @@ describe('osm-metadata provider', () => {
       '"ref:FR:prix-carburants"~"^(91170006|77400012|99999999)$"'
     )
     expect(input).toBe('https://overpass-api.de/api/interpreter')
+  })
+
+  it('envoie un User-Agent explicite (politique Overpass : 406 sans UA)', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(overpassResponse([]))
+    const provider = createOsmMetadataProvider({ fetchFn })
+
+    await provider.findMetadataFor(['91170006'])
+
+    const init = fetchFn.mock.calls[0]![1] as RequestInit
+    const headers = init?.headers as Record<string, string>
+    expect(headers['User-Agent']).toBe(OVERPASS_USER_AGENT)
+  })
+
+  it('découpe la requête en lots bornés : plus d\'ids que la taille de lot → plusieurs requêtes groupées', async () => {
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('wikidata.org')) {
+        return wikidataResponse('Q154037', 'Total wordmark (2003-2021).svg')
+      }
+      const body = decodeURIComponent((init?.body as string) ?? '')
+      if (body.includes('91170006')) return overpassResponse([FIXTURE_TOTAL])
+      return overpassResponse([])
+    })
+    const provider = createOsmMetadataProvider({ fetchFn, batchSize: 2 })
+
+    // Le premier lot contient FIXTURE_TOTAL (91170006) : un résultat attendu.
+    const result = await provider.findMetadataFor(['91170006', '77777777', '88888888', '99999999'])
+
+    // 2 lots Overpass + 1 Wikidata (logo du fixture trouvé).
+    expect(fetchFn).toHaveBeenCalledTimes(3)
+    const body0 = decodeURIComponent((fetchFn.mock.calls[0]![1] as RequestInit).body as string)
+    const body1 = decodeURIComponent((fetchFn.mock.calls[1]![1] as RequestInit).body as string)
+    expect(body0).toContain('^(91170006|77777777)$')
+    expect(body1).toContain('^(88888888|99999999)$')
+    expect(result).toHaveLength(1)
+    expect(result[0]!.id).toBe('91170006')
+  })
+
+  it('taille de lot par défaut bornée (OOVERPASS_QUERY_BATCH_SIZE)', () => {
+    expect(OVERPASS_QUERY_BATCH_SIZE).toBeGreaterThan(0)
+    expect(OVERPASS_QUERY_BATCH_SIZE).toBeLessThanOrEqual(5000)
+  })
+
+  it('retente un lot Overpass en échec transitoire (504) avant de rendre []', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('gateway timeout', { status: 504 }))
+      .mockResolvedValueOnce(overpassResponse([FIXTURE_TOTAL]))
+    const provider = createOsmMetadataProvider({ fetchFn, retries: 2, retryDelayMs: 1 })
+
+    const result = await provider.findMetadataFor(['91170006'])
+
+    expect(fetchFn).toHaveBeenCalledTimes(3) // 2 tentatives Overpass + 1 Wikidata
+    expect(result).toHaveLength(1)
+    expect(result[0]!.id).toBe('91170006')
+  })
+
+  it('abandonne après retries : un lot toujours en échec → [] (jamais d\'exception)', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response('boom', { status: 500 }))
+    const provider = createOsmMetadataProvider({ fetchFn, retries: 2, retryDelayMs: 1 })
+
+    const result = await provider.findMetadataFor(['91170006'])
+
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(result).toEqual([])
   })
 })
 
