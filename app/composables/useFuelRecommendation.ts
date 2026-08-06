@@ -21,6 +21,8 @@ export interface UseFuelRecommendationReturn {
   state: Ref<RecommendationState>
   lastSearch: Ref<RecommendationRequest | null>
   refresh: (request: RecommendationRequest) => Promise<Recommendation | null>
+  /** Réinitialise l'état partagé (tests). */
+  _reset: () => void
 }
 
 const EMPTY: RecommendationState = {
@@ -39,7 +41,18 @@ export function useFuelRecommendation(): UseFuelRecommendationReturn {
   async function refresh(request: RecommendationRequest): Promise<Recommendation | null> {
     lastSearch.value = request
     const myToken = ++token
-    state.value = { ...EMPTY, status: 'loading', startedAt: Date.now(), searchToken: String(myToken) }
+    // « Garder la dernière donnée » (keep previous data) : pendant le
+    // chargement, on conserve la recommandation précédente au lieu de la
+    // vider. Sinon, un pan de la carte relançait la recherche et le badge
+    // « ★ Recommandée » (et la recommandation de la feuille) clignotait —
+    // disparaissait puis réapparaissait à la réponse.
+    state.value = {
+      ...state.value,
+      status: 'loading',
+      error: null,
+      startedAt: Date.now(),
+      searchToken: String(myToken)
+    }
 
     const params = new URLSearchParams()
     if (request.lat !== undefined && request.lon !== undefined) {
@@ -63,7 +76,7 @@ export function useFuelRecommendation(): UseFuelRecommendationReturn {
     } catch {
       if (myToken !== token) return null
       state.value = {
-        ...EMPTY,
+        ...state.value,
         status: 'error',
         error: 'Impossible de joindre le serveur. Vérifiez votre connexion.',
         startedAt: Date.now()
@@ -83,7 +96,7 @@ export function useFuelRecommendation(): UseFuelRecommendationReturn {
       }
       if (myToken !== token) return null
       state.value = {
-        ...EMPTY,
+        ...state.value,
         status: 'error',
         error: message,
         startedAt: Date.now()
@@ -98,7 +111,7 @@ export function useFuelRecommendation(): UseFuelRecommendationReturn {
     } catch {
       if (myToken !== token) return null
       state.value = {
-        ...EMPTY,
+        ...state.value,
         status: 'error',
         error: 'Le serveur a renvoyé une réponse invalide.',
         startedAt: Date.now()
@@ -115,5 +128,10 @@ export function useFuelRecommendation(): UseFuelRecommendationReturn {
     return data
   }
 
-  return { state, lastSearch, refresh }
+  function _reset() {
+    state.value = { ...EMPTY }
+    lastSearch.value = null
+  }
+
+  return { state, lastSearch, refresh, _reset }
 }

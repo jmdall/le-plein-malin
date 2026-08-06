@@ -26,6 +26,8 @@ export interface UseStationsReturn {
   state: Ref<StationsState>
   lastSearch: Ref<StationsRequest | null>
   refresh: (request: StationsRequest) => Promise<StationsQueryResult | null>
+  /** Réinitialise l'état partagé (tests). */
+  _reset: () => void
 }
 
 const EMPTY: StationsState = {
@@ -45,7 +47,19 @@ export function useStations(): UseStationsReturn {
   async function refresh(request: StationsRequest): Promise<StationsQueryResult | null> {
     lastSearch.value = request
     const myToken = ++token
-    state.value = { ...EMPTY, status: 'loading', startedAt: Date.now(), searchToken: String(myToken) }
+    // « Garder la dernière donnée » (keep previous data) : pendant le
+    // chargement, on conserve les stations de la recherche précédente au lieu
+    // de les vider. Sinon, un pan de la carte (qui relance la recherche)
+    // faisait disparaître tous les marqueurs pendant le réseau, puis les
+    // refaisait réapparaître à la réponse (demande produit : les marqueurs ne
+    // doivent pas disparaître pendant un déplacement).
+    state.value = {
+      ...state.value,
+      status: 'loading',
+      error: null,
+      startedAt: Date.now(),
+      searchToken: String(myToken)
+    }
 
     const params = new URLSearchParams()
     if (request.lat !== undefined && request.lon !== undefined) {
@@ -69,7 +83,7 @@ export function useStations(): UseStationsReturn {
     } catch {
       if (myToken !== token) return null
       state.value = {
-        ...EMPTY,
+        ...state.value,
         status: 'error',
         error: 'Impossible de joindre le serveur. Vérifiez votre connexion.',
         startedAt: Date.now()
@@ -89,7 +103,7 @@ export function useStations(): UseStationsReturn {
       }
       if (myToken !== token) return null
       state.value = {
-        ...EMPTY,
+        ...state.value,
         status: 'error',
         error: message,
         startedAt: Date.now()
@@ -107,7 +121,7 @@ export function useStations(): UseStationsReturn {
     } catch {
       if (myToken !== token) return null
       state.value = {
-        ...EMPTY,
+        ...state.value,
         status: 'error',
         error: 'Le serveur a renvoyé une réponse invalide.',
         startedAt: Date.now()
@@ -120,5 +134,10 @@ export function useStations(): UseStationsReturn {
     return data
   }
 
-  return { state, lastSearch, refresh }
+  function _reset() {
+    state.value = { ...EMPTY }
+    lastSearch.value = null
+  }
+
+  return { state, lastSearch, refresh, _reset }
 }

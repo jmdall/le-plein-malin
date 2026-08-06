@@ -48,6 +48,7 @@ function installFetchMock(
 
 beforeEach(() => {
   vi.unstubAllGlobals()
+  useFuelRecommendation()._reset()
 })
 
 describe('useFuelRecommendation (ticket 010)', () => {
@@ -129,6 +130,35 @@ describe('useFuelRecommendation (ticket 010)', () => {
     expect(reco.state.value.status).toBe('empty')
     expect(reco.state.value.data?.type).toBe('insufficient-data')
     expect(result?.type).toBe('insufficient-data')
+  })
+
+  it('garde la recommandation précédente pendant le chargement (pas de clignotement)', async () => {
+    const reco = useFuelRecommendation()
+    let call = 0
+    let resolveSecond: (r: Response) => void = () => {}
+    installFetchMock(async () => {
+      call += 1
+      if (call === 1) {
+        return new Response(JSON.stringify({ recommendation: makeRecommendation() }), { status: 200 })
+      }
+      return new Promise((resolve) => {
+        resolveSecond = resolve
+      })
+    })
+
+    await reco.refresh({ radius: 10, fuel: 'Gazole', lat: 48.86, lon: 2.34 })
+    expect(reco.state.value.status).toBe('success')
+    expect(reco.state.value.data?.type).toBe('wait')
+
+    // Nouvelle recherche (pan) : pendant le chargement, la recommandation
+    // précédente reste disponible — le badge ★ Recommandée ne clignote pas.
+    const pending = reco.refresh({ radius: 10, fuel: 'Gazole', lat: 48.9, lon: 2.4 })
+    expect(reco.state.value.status).toBe('loading')
+    expect(reco.state.value.data?.type).toBe('wait')
+
+    resolveSecond(new Response(JSON.stringify({ recommendation: makeRecommendation({ confidence: 0.5 }) }), { status: 200 }))
+    await pending
+    expect(reco.state.value.data?.confidence).toBe(0.5)
   })
 
   it('construit une URL de requête correcte (lat/lon + radius + fuel)', async () => {

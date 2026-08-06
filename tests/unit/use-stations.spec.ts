@@ -35,6 +35,7 @@ function installFetchMock(handler: (url: string) => Promise<Response>) {
 
 beforeEach(() => {
   vi.unstubAllGlobals()
+  useStations()._reset()
 })
 
 describe('useStations (ticket 011)', () => {
@@ -147,6 +148,50 @@ describe('useStations (ticket 011)', () => {
     const url = new URL(urls[0]!, 'http://localhost')
     expect(url.searchParams.get('city')).toBe('Lyon')
     expect(url.searchParams.get('lat')).toBeNull()
+  })
+
+  it('garde les stations précédentes pendant le chargement (pas de disparition des marqueurs)', async () => {
+    const s = useStations()
+    const first = new Response(
+      JSON.stringify({
+        stations: [makeStation('a')],
+        referenceStation: null,
+        query: { center: { lat: 48.86, lon: 2.34 }, radius: 10, fuel: 'Gazole' }
+      }),
+      { status: 200 }
+    )
+    let resolveSecond: (r: Response) => void = () => {}
+    let call = 0
+    installFetchMock(async () => {
+      call += 1
+      if (call === 1) return first
+      return new Promise((resolve) => {
+        resolveSecond = resolve
+      })
+    })
+
+    await s.refresh({ radius: 10, fuel: 'Gazole', lat: 48.86, lon: 2.34 })
+    expect(s.state.value.status).toBe('success')
+    expect(s.state.value.data?.stations).toHaveLength(1)
+
+    // Nouvelle recherche (pan de la carte) : pendant le chargement, les
+    // données précédentes restent disponibles — la carte garde ses marqueurs.
+    const pending = s.refresh({ radius: 10, fuel: 'Gazole', lat: 48.9, lon: 2.4 })
+    expect(s.state.value.status).toBe('loading')
+    expect(s.state.value.data?.stations).toHaveLength(1)
+
+    resolveSecond(
+      new Response(
+        JSON.stringify({
+          stations: [makeStation('b')],
+          referenceStation: null,
+          query: { center: { lat: 48.9, lon: 2.4 }, radius: 10, fuel: 'Gazole' }
+        }),
+        { status: 200 }
+      )
+    )
+    await pending
+    expect(s.state.value.data?.stations[0]?.id).toBe('b')
   })
 
   it('une réponse sans tableau stations est traitée comme invalide (erreur, pas de donnée inventée)', async () => {
