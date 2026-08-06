@@ -137,6 +137,11 @@ function selectSuggestion(index: number) {
 }
 
 function closeSuggestions() {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
+  controller?.abort()
   open.value = false
   suggestions.value = []
   selectedIndex.value = -1
@@ -147,6 +152,7 @@ function submit() {
   if (query.length === 0) {
     return
   }
+  closeSuggestions()
   emit('search', query)
 }
 
