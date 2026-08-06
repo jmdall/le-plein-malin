@@ -351,15 +351,6 @@ function syncClusters(clusters: StationCluster[]) {
           }
         })
       layer.addTo(map)
-      // Le disque apparaît en fondu, comme les marqueurs (rien ne saute).
-      const el = layer.getElement()
-      if (el) {
-        el.style.opacity = '0'
-        requestAnimationFrame(() => {
-          el.style.transition = 'opacity 0.25s ease'
-          el.style.opacity = '1'
-        })
-      }
       clusterLayers.set(key, layer)
     }
     // Le cluster est réutilisé par identité de membres : son centroïde peut
@@ -481,15 +472,6 @@ function syncMarkers() {
           }
         })
       layer.addTo(map)
-      // Le badge apparaît en fondu (rien ne « pop »).
-      const el = layer.getElement()
-      if (el) {
-        el.style.opacity = '0'
-        requestAnimationFrame(() => {
-          el.style.transition = 'opacity 0.25s ease'
-          el.style.opacity = '1'
-        })
-      }
       markerLayers.set(id, layer)
     }
     // La position suit TOUJOURS la station (même si l'apparence ne change
