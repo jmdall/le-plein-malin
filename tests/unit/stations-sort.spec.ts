@@ -20,6 +20,7 @@ function station(id: string, overrides: Partial<ListedStation> = {}): ListedStat
     distanceKm: 5,
     isReference: false,
     economics: { detourCost: 0.5, grossSavings: 2, netSavings: 1.5 },
+    attractiveness: null,
     freshness: { ageInHours: 2, status: 'fresh', score: 1 },
     ...overrides
   }

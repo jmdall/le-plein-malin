@@ -20,6 +20,7 @@ import { inArray } from 'drizzle-orm'
 import { haversineKm } from '../../domain/fuel-prices/haversine'
 import { computeFreshness } from '../../domain/fuel-prices/freshness'
 import { computeCandidateEconomics } from '../../domain/fuel-prices/economics'
+import { computePriceAttractiveness } from '../../domain/fuel-prices/priceAttractiveness'
 import { calculateFuelRecommendation } from '../../domain/recommendation/calculate'
 import { calculateTrendIndicators } from '../../domain/trend/calculateTrend'
 import type { FuelRecommendation } from '../../domain/recommendation/types'
@@ -74,6 +75,12 @@ export interface ListedStation extends StationPrice {
     status: 'fresh' | 'stale' | 'obsolete'
     score: number
   }
+  // Attractivité du prix (dégradé des marqueurs de la carte) : 0 = le plus
+  // cher de la bande (±15 % de la référence), 1 = le moins cher, 0,5 = prix
+  // égal à la référence (module pur domain/fuel-prices/priceAttractiveness).
+  // null pour la station de référence (point de comparaison, pas une
+  // alternative).
+  attractiveness: number | null
   // Enrichissement d'identité (016-019) : l'enseigne réelle, son identifiant
   // Wikidata et l'URL du logo, exposés par l'API quand disponibles (ticket
   // 020). Nullables — jamais inventés (REC-2/D1) ; le nom réel est `name`.
@@ -361,6 +368,13 @@ export async function buildStationsList(options: {
             })
           : { detourCost: null, grossSavings: null, netSavings: null }
       const freshness = computeFreshness(s.updatedAt, now)
+      // Attractivité du prix vs référence (module pur, bande ±15 %) : nulle
+      // pour la station de référence elle-même (elle est le point de
+      // comparaison, pas une alternative — CONTEXT.md).
+      const attractiveness =
+        referencePrice !== null && !isReference
+          ? computePriceAttractiveness({ referencePrice, price: s.price })
+          : null
       return {
         ...toStationPriceWithDistance(s),
         // Enrichissement d'identité : toujours présents (null si absents —
@@ -371,6 +385,7 @@ export async function buildStationsList(options: {
         distanceKm: s.distanceKm,
         isReference,
         economics,
+        attractiveness,
         freshness: {
           ageInHours: freshness.ageInHours,
           status: freshness.status,

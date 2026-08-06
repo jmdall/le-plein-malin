@@ -50,6 +50,32 @@ export function brandInitial(brand: string): string {
   return Array.from(trimmed)[0]!.toUpperCase()
 }
 
+// ——— Logos par défaut d'enseigne ———
+// Le logo fourni par OSM/Wikidata (P154) peut être daté (ex. l'ancien
+// wordmark « Total ») alors que l'enseigne a changé d'identité visuelle.
+// LOGO_OVERRIDES impose le logo ACTUEL d'une enseigne. Les fichiers sont
+// servis par l'app elle-même (public/brands/) : aucun hotlink vers une URL
+// arbitraire (NFR-SEC) et pas de dépendance à un hôte tiers au rendu.
+const TOTALENERGIES_LOGO = '/brands/totalenergies.png'
+const INTERMARCHE_LOGO = '/brands/intermarche.jpg'
+
+/** Enseignes dont l'app fournit le logo en local, au lieu de Wikimedia. */
+export const LOGO_OVERRIDES: Readonly<Record<string, string>> = {
+  'Total': TOTALENERGIES_LOGO,
+  'Total Access': TOTALENERGIES_LOGO,
+  'TotalEnergies': TOTALENERGIES_LOGO,
+  'Intermarché': INTERMARCHE_LOGO
+}
+
+/** Logo effectif d'une enseigne : le logo local par défaut PRIME (il porte
+    l'identité visuelle ACTUELLE, ex. TotalEnergies au lieu de l'ancien
+    wordmark Total de Wikimedia), sinon l'URL fournie validée, sinon null. */
+export function displayLogoFor(brand: string | null | undefined, logoUrl: string | null | undefined): string | null {
+  const key = brand?.trim()
+  if (key && LOGO_OVERRIDES[key]) return LOGO_OVERRIDES[key]
+  return isSafeLogoUrl(logoUrl) ? logoUrl : null
+}
+
 export function identityBadgeFor(input: {
   brand: string | null | undefined
   logoUrl: string | null | undefined
@@ -58,8 +84,7 @@ export function identityBadgeFor(input: {
   const { brand, logoUrl, name } = input
   const label = brand?.trim() || name.trim() || 'Station'
   const initial = brand ? brandInitial(brand) : ''
-  const safeLogo = isSafeLogoUrl(logoUrl) ? logoUrl : null
-  return { label, logoUrl: safeLogo, initial, fallbackGlyph: initial || '⛽', alt: label }
+  return { label, logoUrl: displayLogoFor(brand, logoUrl), initial, fallbackGlyph: initial || '⛽', alt: label }
 }
 
 // ——— Attribution OSM (ODbL) : la mention de licence exigée par la source des

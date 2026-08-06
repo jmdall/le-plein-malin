@@ -423,6 +423,8 @@ const bottomOverlaysHidden = computed(() => isMobile.value && sheetState.value =
          quand la feuille est étendue (elle recouvrirait cette zone). -->
     <div v-show="!bottomOverlaysHidden" class="map-overlay map-overlay-legend">
       <div class="overlay-card map-legend">
+        <p class="map-legend-row"><span class="badge-dot" style="color: var(--marker-cheap)" />Moins cher</p>
+        <p class="map-legend-row"><span class="badge-dot" style="color: var(--marker-exp)" />Plus cher</p>
         <p class="map-legend-row"><span class="badge-dot" style="color: var(--marker-rupture)" />Prix périmé</p>
       </div>
       <p class="pill pill-raised map-counter" role="status">

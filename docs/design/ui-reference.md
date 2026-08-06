@@ -108,19 +108,26 @@ De haut en bas, tout **flottant au-dessus** de la carte (voir
 3. **La carte** occupe tout le reste, tuiles OpenStreetMap standard.
 4. **Marqueurs de prix** — c'est la signature visuelle. Badge rectangle très
    arrondi, fond blanc, ombre portée, contenant :
-   - à gauche un carré/logo de l'enseigne (Total, Avia, Intermarché, Esso…) ;
+   - à gauche le **logo de l'enseigne seul** (Total, Avia, Intermarché, Esso…),
+     recadré serré (tile 14 px, `object-fit: cover`) — les wordmarks
+     panoramiques comme Total ne débordent pas du badge. Le nom de l'enseigne
+     n'est pas répété dans le badge : il est dans la popup et le nom accessible
+     (NFR-ACC-4) ;
    - à droite le **prix au format `2,319`** (virgule décimale, 3 décimales),
      en gras ;
-   - la **couleur du liseré/fond** encode le prix : vert = moins cher,
-     terracotta = plus cher, gris = rupture ;
-   - un « ergot » pointant vers le bas ancre le badge à la station.
+   - la **couleur du liseré/du prix/de l'ergot encode l'attractivité du prix**
+     en dégradé : vert = moins cher, terracotta = plus cher, gris = prix égal à
+     la référence / rupture. Le fond du badge reste blanc (contraste AA sur les
+     tuiles claires) ;
+   - un « ergot » pointant vers le bas ancre le badge à la station, teinté de
+     la même couleur.
 5. **Clusters** — disques pleins terracotta avec le nombre de stations (`2`,
    `3`), texte blanc.
 6. **Badge « ★ Recommandée »** — pilule verte pleine, texte blanc, étoile.
    C'est exactement notre notion de station recommandée : réutilise-le.
 7. **Carte de légende** en bas à gauche — carte blanche arrondie, trois lignes
    « pastille + libellé » : `Moins cher` (vert), `Plus cher` (terracotta),
-   `Rupture` (gris).
+   `Prix périmé` (gris).
 8. **Pilule compteur** en bas à gauche sous la légende — `⛽ 9 801 stations`.
 9. **Contrôles flottants en bas à droite**, empilés : bouton rond véhicule,
    bouton rond de recentrage `◎`, puis le stack zoom `+` / `−`. Boutons ronds
@@ -231,6 +238,31 @@ correct en sombre sans une ligne de CSS supplémentaire.
 Volontairement **identiques en clair et en sombre** : ils sont posés sur les
 tuiles OpenStreetMap, qui restent claires quel que soit le thème.
 
+Le dégradé des marqueurs quantifie l'attractivité du prix en 5 paliers
+(`jflp-price-badge-tier-0` … `-4`), interpolation de `--terracotta-fill` (0, le
+plus cher de la bande) vers `--green-700` (1, le moins cher) par pas de
+25 % : terracotta → brun → neutre ocre → vert-olive → vert. La bande de prix
+comparée est ±15 % autour de la station de référence (module pur
+`domain/fuel-prices/priceAttractiveness`) ; la station de référence
+elle-même reste neutre (`pill-outline`, elle est le point de comparaison).
+
+Le **fond du badge porte la couleur** (demande produit) : chaque palier est
+un fond plein avec du texte blanc (`--marker-tier-on-fill`, ≥ 5,8:1 sur tous
+les paliers — WCAG AA), identique en clair et en sombre (posé sur les tuiles
+OSM claires). Le logo d'enseigne garde sa pastille blanche, lisible sur tous
+les paliers. La couleur n'est jamais le seul vecteur (NFR-ACC-4) : le prix
+reste en texte dans le badge, et le nom accessible porte l'état.
+
+Paliers (tokens `--marker-tier-0…4` — fond du badge + ergot) :
+
+| Palier | Attractivité | Fond / ergot |
+| --- | --- | --- |
+| `-0` | 0 — le plus cher de la bande | `--marker-tier-0` (terracotta) |
+| `-1` | ~0,25 | `--marker-tier-1` (brun) |
+| `-2` | ~0,5 — prix ≈ référence | `--marker-tier-2` (neutre ocre) |
+| `-3` | ~0,75 | `--marker-tier-3` (vert-olive) |
+| `-4` | 1 — le moins cher de la bande | `--marker-tier-4` (vert) |
+
 ### Tokens — formes, ombres, plans
 
 | Token | Valeur | Rôle |
@@ -293,7 +325,7 @@ La page carte doit poser ses overlays **entre** les deux :
 | `.segmented-tab-active` | onglet actif : pilule `--accent` pleine, texte `--accent-contrast` |
 | `.sr-only` | contenu réservé aux lecteurs d'écran (inchangé) |
 | `.stations-area` | conteneur de la liste des stations (inchangé, ticket 011) |
-| `components/BrandBadge.vue` | pastille d'enseigne : logo (décoratif, `alt=""`) ou repli initiale, nom en texte à côté — le nom réel de la station prime (NFR-ACC-4, ticket 021) |
+| `components/BrandBadge.vue` | pastille d'enseigne : logo (décoratif, `alt=""`, recadré serré — `object-fit: cover`) ou repli initiale, nom en texte à côté — le nom réel de la station prime (NFR-ACC-4, ticket 021). Les logos servis par l'app (public/brands/, ex. TotalEnergies) priment sur celui de Wikimedia |
 
 Markup attendu pour le segmented control (les rôles ARIA restent à la charge
 du composant) :

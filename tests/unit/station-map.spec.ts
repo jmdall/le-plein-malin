@@ -22,6 +22,7 @@ function station(id: string, overrides: Partial<ListedStation> = {}): ListedStat
     distanceKm: 1.2,
     isReference: false,
     economics: { detourCost: 0.5, grossSavings: 2, netSavings: 1.5 },
+    attractiveness: null,
     freshness: { ageInHours: 2, status: 'fresh', score: 1 },
     ...overrides
   }
@@ -73,14 +74,16 @@ describe('buildStationMapView (ticket 012)', () => {
     const view = buildStationMapView(
       [
         station('a', { brand: 'Total', logoUrl: ok }),
-        station('b', { brand: 'Total', logoUrl: evil }),
+        // Enseigne SANS logo local : URL arbitraire → null.
+        station('b', { brand: 'Esso', logoUrl: evil }),
         station('c', { brand: null, logoUrl: null })
       ],
       null,
       null
     )
     const byId = (id: string) => view.markers.find((m) => m.id === id)!
-    expect(byId('a').logoUrl).toBe(ok)
+    // Total est couvert par le logo local (displayLogoFor) : il prime.
+    expect(byId('a').logoUrl).toBe('/brands/totalenergies.png')
     expect(byId('b').logoUrl).toBeNull()
     expect(byId('c').logoUrl).toBeNull()
   })
@@ -106,9 +109,10 @@ describe('buildPopupHtml (ticket 012 + 021)', () => {
     const marker2 = buildStationMapView([branded], null, null).markers[0]!
     const html = buildPopupHtml(marker2)
     expect(html).toContain('TotalEnergies')
-    // Pas de logo fourni : repli initiale, jamais d'<img> cassé ni d'id.
-    expect(html).not.toContain('<img')
-    expect(html).toContain('>T</span>')
+    // Pas de logo fourni par la source : le logo local par défaut de
+    // l'enseigne (public/brands/) prend le relais (displayLogoFor) — jamais
+    // d'<img> cassé ni d'id.
+    expect(html).toContain('src="/brands/totalenergies.png"')
   })
 
   it('sans enseigne, la popup ne mentionne ni brand ni logo', () => {

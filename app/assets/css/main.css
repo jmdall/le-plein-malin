@@ -77,6 +77,22 @@
   --marker-exp: var(--terracotta);
   --marker-rupture: var(--text-400);
 
+  /* ——— Dégradé d'attractivité des marqueurs (docs/design/ui-reference.md
+     §« Tokens — marqueurs de prix ») ———
+     Les 5 paliers quantifient l'attractivité du prix vs la station de
+     référence (module pur domain/fuel-prices/priceAttractiveness, bande
+     ±15 %). Ce sont des FONDS de badge (demande produit) : interpolation de
+     --terracotta-fill (0 = Plus cher) vers --green-700 (1 = Moins cher) en
+     passant par un neutre lisible. Chaque fond porte du TEXTE BLANC
+     (--marker-tier-on-fill, ≥ 5,8:1 sur tous les paliers — WCAG AA).
+     Identiques en clair/sombre (posés sur tuiles claires). */
+  --marker-tier-0: var(--terracotta-fill);
+  --marker-tier-1: #86563A;
+  --marker-tier-2: #6E5D3C;
+  --marker-tier-3: #55643E;
+  --marker-tier-4: var(--green-700);
+  --marker-tier-on-fill: #FFFFFF;
+
   /* ——— Rayons ———
      La pilule (9999px) est le rayon le plus fréquent de la référence. */
   --r-md: 12px;

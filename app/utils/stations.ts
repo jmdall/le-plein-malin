@@ -29,6 +29,10 @@ export interface ListedStation {
     grossSavings: number | null
     netSavings: number | null
   }
+  // Attractivité du prix vs station de référence (dégradé des marqueurs de
+  // la carte) : 0 = plus cher de la bande ±15 %, 1 = moins cher, 0,5 = prix
+  // égal à la référence. null pour la station de référence elle-même.
+  attractiveness: number | null
   freshness: {
     ageInHours: number
     status: 'fresh' | 'stale' | 'obsolete'

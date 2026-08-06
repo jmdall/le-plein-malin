@@ -58,11 +58,16 @@ describe('buildStationsList (ticket 011, STA-1)', () => {
     expect(ref.distanceKm).toBeCloseTo(0, 6)
     // La référence n'a pas d'économie : elle est le point de comparaison.
     expect(ref.economics).toEqual({ detourCost: null, grossSavings: null, netSavings: null })
+    // Pas d'attractivité non plus : la référence n'est pas une alternative.
+    expect(ref.attractiveness).toBeNull()
     expect(ref.freshness.status).toBe('fresh')
 
     const cand = res.stations.find((s) => s.id === 'b')!
     expect(cand.isReference).toBe(false)
     expect(cand.distanceKm).toBeGreaterThan(0)
+    // Attractivité du prix : bande ±15 % autour de 2,0 → [1,7 ; 2,3] ;
+    // 1,9 est moins cher que la référence → (2,3 − 1,9)/(2,3 − 1,7) = 0,667.
+    expect(cand.attractiveness).toBeCloseTo(2 / 3, 6)
     // Économie brute = (2,0 − 1,9) × 40 = 4 € ; coût du détour = détour A/R × conso/100 × prix.
     const dist = cand.distanceKm
     const detour = Math.max(0, dist - ref.distanceKm) * 2

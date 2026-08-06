@@ -64,24 +64,25 @@ function onLogoError() {
 }
 .brand-badge-logo {
   flex: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  object-fit: contain;
+  width: 16px;
+  height: 16px;
+  border-radius: 6px;
+  object-fit: cover;
+  object-position: center;
   background: var(--surface);
 }
 .brand-badge-sm .brand-badge-logo {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 .brand-badge-fallback {
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  border-radius: 6px;
   background: var(--surface);
   color: var(--text-700);
   border: 1px solid var(--border);
@@ -89,8 +90,8 @@ function onLogoError() {
   font-weight: 800;
 }
 .brand-badge-sm .brand-badge-fallback {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   font-size: 0.62rem;
 }
 </style>

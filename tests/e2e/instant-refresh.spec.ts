@@ -72,6 +72,7 @@ function stationsResult(fuel: string, price: number, radius: number) {
         distanceKm: 1.2,
         isReference: false,
         economics: { detourCost: 0.42, grossSavings: 6.04, netSavings: 5.62 },
+        attractiveness: 0.8,
         freshness: { ageInHours: 2, status: 'fresh', score: 1 }
       }
     ],

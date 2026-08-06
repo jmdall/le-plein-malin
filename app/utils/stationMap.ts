@@ -15,7 +15,7 @@
 import { buildDirectionsUrl } from './location'
 import { FRESHNESS_LABELS } from './stations'
 import { formatPrice, formatDistance, formatAgeLabel } from './format'
-import { isSafeLogoUrl, brandInitial } from './stationIdentity'
+import { displayLogoFor, brandInitial } from './stationIdentity'
 import type { ListedStation } from './stations'
 
 export const MAP_START_ZOOM = 11
@@ -44,6 +44,9 @@ export interface StationMapMarker {
   ageLabel: string
   /** > 24 h (CONTEXT.md §Fraîcheur) : affichage atténué + marqueur de fraîcheur. */
   isStale: boolean
+  /** Attractivité du prix vs référence, 0…1 (API) : dégradé du badge.
+      null pour la station de référence (point de comparaison). */
+  attractiveness: number | null
   directionsUrl: string
 }
 
@@ -74,13 +77,6 @@ export function formatMarkerPrice(price: number): string {
   return price.toLocaleString('fr-FR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 }
 
-// ——— Nom court d'enseigne pour le badge marqueur (place limitée ; ticket
-// 021 : le badge porte le logo ET ce nom court à côté du prix). ———
-export function shortBrandLabel(brand: string): string {
-  const first = brand.trim().split(/\s+/)[0] ?? brand
-  return first.length > 9 ? `${first.slice(0, 8)}…` : first
-}
-
 export function buildStationMapView(
   stations: ListedStation[],
   referenceStation: ListedStation | null,
@@ -92,7 +88,7 @@ export function buildStationMapView(
       id: s.id,
       name: s.name,
       brand: s.brand,
-      logoUrl: isSafeLogoUrl(s.logoUrl) ? s.logoUrl : null,
+      logoUrl: displayLogoFor(s.brand, s.logoUrl),
       lat: s.position.lat,
       lon: s.position.lon,
       isReference: s.isReference,
@@ -104,6 +100,7 @@ export function buildStationMapView(
       freshnessLabel: FRESHNESS_LABELS[s.freshness.status],
       ageLabel: formatAgeLabel(s.freshness.ageInHours),
       isStale: s.freshness.ageInHours > 24,
+      attractiveness: s.attractiveness ?? null,
       directionsUrl: buildDirectionsUrl(s.position)
     }
   })

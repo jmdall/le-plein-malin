@@ -24,7 +24,7 @@
 //     prix, la fraîcheur et la recommandation sont toujours doublés de texte ;
 //   - contrôles de zoom ≥ 44 px (NFR-RES-2) et libellés français.
 import { computed, ref, watch, nextTick, onBeforeUnmount } from 'vue'
-import { buildStationMapView, buildPopupHtml, shortBrandLabel, escapeHtml } from '../utils/stationMap'
+import { buildStationMapView, buildPopupHtml, escapeHtml } from '../utils/stationMap'
 import type { StationMapView, StationMapMarker } from '../utils/stationMap'
 import { buildStationClusters, clusterRadiusKmForZoom } from '../utils/stationClusters'
 import type { StationCluster } from '../utils/stationClusters'
@@ -328,25 +328,28 @@ function makeIcon(marker: StationMapMarker, L: typeof import('leaflet')) {
   if (marker.isReference) classes.push('jflp-marker-reference')
   if (marker.isRecommended) classes.push('jflp-marker-recommended')
   if (marker.isStale) classes.push('jflp-marker-stale')
-
-  const tierClass = 'pill-outline'
+  // Le badge porte le dégradé d'attractivité du prix (0 → terracotta « Plus
+  // cher », 1 → vert « Moins cher ») en fond de l'ergot et du liseré. La
+  // couleur n'est jamais le seul vecteur (NFR-ACC-4) : le prix est en texte
+  // et le nom accessible porte l'état. Sans attractivité (référence) ou prix
+  // périmé, le badge reste neutre.
+  const tierClass = marker.attractiveness === null
+    ? 'pill-outline'
+    : `jflp-price-badge-tier-${Math.min(4, Math.max(0, Math.round(marker.attractiveness * 4)))}`
 
   const recoHtml = marker.isRecommended
     ? `<span class="pill pill-accent pill-raised jflp-reco-badge">★ Recommandée</span>`
     : ''
-  // Logo d'enseigne + nom court à gauche du prix (docs/design/ui-reference.md
-  // §4 — la signature visuelle cible, ticket 021). Décoratif : le nom réel
-  // est porté par le nom accessible et la popup (NFR-ACC-4). L'URL est déjà
+  // Logo d'enseigne seul à gauche du prix (docs/design/ui-reference.md §4 —
+  // la signature visuelle cible, ticket 021). Décoratif : le nom réel est
+  // porté par le nom accessible et la popup (NFR-ACC-4). L'URL est déjà
   // validée côté utils/stationMap ; sans logo, pastille initiale — jamais une
   // image cassée ni un id.
   const logoHtml = marker.logoUrl
-    ? `<img class="jflp-price-badge-logo" src="${escapeHtml(marker.logoUrl)}" alt="" width="16" height="16" loading="lazy" onerror="this.remove()" />`
+    ? `<img class="jflp-price-badge-logo" src="${escapeHtml(marker.logoUrl)}" alt="" width="14" height="14" loading="lazy" onerror="this.remove()" />`
     : marker.brand
       ? `<span class="jflp-price-badge-logo jflp-price-badge-logo-fallback" aria-hidden="true">${escapeHtml(brandInitial(marker.brand) || '⛽')}</span>`
       : ''
-  const brandHtml = marker.brand
-    ? `<span class="jflp-price-badge-brand">${escapeHtml(shortBrandLabel(marker.brand))}</span>`
-    : ''
   const freshHtml = marker.isStale ? `<span class="jflp-price-badge-fresh" aria-hidden="true">⏱</span>` : ''
 
   const html =
@@ -354,7 +357,6 @@ function makeIcon(marker: StationMapMarker, L: typeof import('leaflet')) {
     recoHtml +
     `<span class="pill pill-raised jflp-price-badge ${tierClass}">` +
     logoHtml +
-    brandHtml +
     `<span class="jflp-price-badge-price">${marker.markerPriceLabel}</span>` +
     freshHtml +
     `</span>` +
@@ -384,7 +386,7 @@ function iconSignature(marker: StationMapMarker): string {
   ]
     .filter(Boolean)
     .join('')
-  return `${flags}|${marker.markerPriceLabel}|${marker.logoUrl ?? ''}`
+  return `${flags}|${marker.markerPriceLabel}|${marker.logoUrl ?? ''}|${marker.attractiveness ?? ''}`
 }
 
 function syncMarkers() {
@@ -640,16 +642,79 @@ onBeforeUnmount(() => {
   padding: 0.3rem 0.6rem;
   white-space: nowrap;
 }
+/* ═══ Dégradé d'attractivité du prix (docs/design/ui-reference.md §4 :
+   « la couleur du liseré/fond encode le prix : vert = moins cher, terracotta
+   = plus cher »). La bande est l'interpolation de 0 (Plus cher) à 1 (Moins
+   cher) autour de la station de référence, quantifiée en 5 paliers
+   (0–4) : dégradé perçu en rampe, sans discontinuité — deux marqueurs de
+   prix proches ont des teintes proches. Le FOND du badge porte la couleur
+   (demande produit) : chaque palier est un fond plein avec du texte blanc
+   (--marker-tier-on-fill, ≥ 5,8:1 — NFR-ACC-2), identique en clair/sombre
+   (posé sur les tuiles OSM claires). La couleur n'est jamais le seul vecteur
+   (NFR-ACC-4) : le prix reste en texte dans le badge. */
+.jflp-price-badge.jflp-price-badge-tier-0,
+.jflp-price-badge.jflp-price-badge-tier-1,
+.jflp-price-badge.jflp-price-badge-tier-2,
+.jflp-price-badge.jflp-price-badge-tier-3,
+.jflp-price-badge.jflp-price-badge-tier-4 {
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-md);
+  color: var(--marker-tier-on-fill);
+}
+/* Plus cher (0) — terracotta pur ; progression vers le vert par pas de 25 %
+   sur la bande, en passant par un neutre lisible qui porte le blanc.
+   Spécificité > .pill (fond blanc par défaut du badge) : le fond plein
+   l'emporte quel que soit l'ordre d'injection des chunks CSS. */
+.jflp-price-badge.jflp-price-badge-tier-0 {
+  background: var(--marker-tier-0);
+}
+.jflp-price-badge.jflp-price-badge-tier-1 {
+  background: var(--marker-tier-1);
+}
+.jflp-price-badge.jflp-price-badge-tier-2 {
+  background: var(--marker-tier-2);
+}
+.jflp-price-badge.jflp-price-badge-tier-3 {
+  background: var(--marker-tier-3);
+}
+.jflp-price-badge.jflp-price-badge-tier-4 {
+  background: var(--marker-tier-4);
+}
+/* Le logo garde sa pastille sur fond blanc, lisible sur tous les paliers. */
+.jflp-price-badge-tier-0 .jflp-price-badge-logo,
+.jflp-price-badge-tier-1 .jflp-price-badge-logo,
+.jflp-price-badge-tier-2 .jflp-price-badge-logo,
+.jflp-price-badge-tier-3 .jflp-price-badge-logo,
+.jflp-price-badge-tier-4 .jflp-price-badge-logo {
+  background: var(--surface);
+}
+/* L'ergot suit la couleur du fond (dégradé) au lieu d'être blanc neutre. */
+.jflp-price-badge-tier-0 .jflp-price-badge-arrow {
+  border-top-color: var(--marker-tier-0);
+}
+.jflp-price-badge-tier-1 .jflp-price-badge-arrow {
+  border-top-color: var(--marker-tier-1);
+}
+.jflp-price-badge-tier-2 .jflp-price-badge-arrow {
+  border-top-color: var(--marker-tier-2);
+}
+.jflp-price-badge-tier-3 .jflp-price-badge-arrow {
+  border-top-color: var(--marker-tier-3);
+}
+.jflp-price-badge-tier-4 .jflp-price-badge-arrow {
+  border-top-color: var(--marker-tier-4);
+}
 /* Logo d'enseigne : pastille ronde à gauche du prix (signature visuelle de
    l'écran carte, docs/design/ui-reference.md §4). Décoratif (alt vide) ;
    le repli est une pastille portant l'initiale de l'enseigne — jamais une
    image cassée (ticket 021, NFR-ACC-4). */
 .jflp-price-badge-logo {
   flex: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  object-fit: contain;
+  width: 14px;
+  height: 14px;
+  border-radius: 5px;
+  object-fit: cover;
+  object-position: center;
   background: var(--surface);
 }
 .jflp-price-badge-logo-fallback {
@@ -664,10 +729,6 @@ onBeforeUnmount(() => {
 .jflp-price-badge-price {
   font-weight: 800;
 }
-.jflp-price-badge-brand {
-  font-weight: 600;
-  opacity: 0.85;
-}
 .jflp-price-badge-fresh {
   font-size: 0.72rem;
   line-height: 1;
@@ -681,7 +742,9 @@ onBeforeUnmount(() => {
   border-top: 7px solid var(--surface);
 }
 /* Marqueur station de référence : liseré supplémentaire discret, en plus du
-   texte "station de référence" porté par le nom accessible (NFR-ACC-4). */
+   texte "station de référence" porté par le nom accessible (NFR-ACC-4). Elle
+   n'a pas d'attractivité (point de comparaison, pas une alternative) : badge
+   neutre (pill-outline). */
 .jflp-marker-reference .jflp-price-badge {
   box-shadow: 0 0 0 2px var(--border-strong);
 }
@@ -797,8 +860,9 @@ onBeforeUnmount(() => {
   flex: none;
   width: 18px;
   height: 18px;
-  border-radius: var(--r-md);
-  object-fit: contain;
+  border-radius: 6px;
+  object-fit: cover;
+  object-position: center;
   background: var(--surface);
 }
 .map-popup-logo-fallback {
@@ -808,7 +872,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   width: 18px;
   height: 18px;
-  border-radius: var(--r-md);
+  border-radius: 6px;
   background: var(--slate-100);
   color: var(--text-700);
   border: 1px solid var(--border);

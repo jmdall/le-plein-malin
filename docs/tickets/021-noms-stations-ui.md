@@ -20,9 +20,10 @@ source OSM (ODbL) est affichée comme demandé par la licence.
 
 **Statut :** ready-for-agent
 
-- [ ] Carte (StationMap.vue) : les marqueurs affichent le nom court de
-      l'enseigne (déjà prévu — `shortBrandLabel`) et le logo si `logoUrl`
-      disponible ; la popup affiche le nom réel + l'enseigne + le logo.
+- [ ] Carte (StationMap.vue) : les marqueurs affichent le logo seul à gauche du
+      prix (nom court retiré du badge — le logo suffit, le nom réel est dans la
+      popup et le nom accessible) ; la popup affiche le nom réel + l'enseigne +
+      le logo.
 - [ ] Liste (StationCard.vue / StationList.vue) : le nom réel remplace l'id
       quand il est disponible ; l'enseigne et le logo s'affichent (fallback
       élégant si pas de logo : pictogramme ⛽ ou initiale, jamais une image
