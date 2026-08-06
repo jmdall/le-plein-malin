@@ -520,7 +520,57 @@ button {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   7. Zone de liste des stations (ticket 011)
+   7. Autocomplete de la recherche ville/adresse (ticket 025)
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* Liste de suggestions posée SOUS le champ de recherche (LocationSearch.vue) :
+   même surface chaude que la pilule, --shadow-md, coins --r-lg. Positionnée
+   en absolu dans un conteneur position:relative et z-index: var(--z-overlay)
+   pour passer AU-DESSUS des contrôles Leaflet (z-index 1000, cf.
+   ui-reference.md « Tokens — formes, ombres, plans »). */
+
+.autocomplete-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: var(--z-overlay);
+  margin: 0;
+  padding: 0.35rem;
+  list-style: none;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md);
+  max-height: min(16rem, 50dvh);
+  overflow-y: auto;
+}
+
+/* Item de suggestion : le label est le texte lisible (ville ou adresse), le
+   contexte (département, région) est secondaire. L'item actif partage le fond
+   de survol --slate-100 ; l'option est aussi indiquée par aria-selected. */
+.autocomplete-option {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.autocomplete-option:hover {
+  background: var(--slate-100);
+}
+.autocomplete-option-active {
+  background: var(--slate-100);
+}
+.autocomplete-option-label {
+  font-size: 0.9rem;
+  color: var(--text-900);
+}
+.autocomplete-option-context {
+  font-size: 0.75rem;
+  color: var(--text-700);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   8. Zone de liste des stations (ticket 011)
    ═════════════════════════════════════════════════════════════════════════ */
 .stations-area {
   margin-top: 1.25rem;

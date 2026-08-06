@@ -326,6 +326,8 @@ La page carte doit poser ses overlays **entre** les deux :
 | `.segmented-inset` | modificateur : variante sans ombre sur fond `--slate-100`, pour un segmented **dans une page** (pas sur la carte) |
 | `.segmented-tab` | onglet inactif : ≥ 44 px, pilule transparente, texte `--text-700` |
 | `.segmented-tab-active` | onglet actif : pilule `--accent` pleine, texte `--accent-contrast` |
+| `.autocomplete-list` | liste de suggestions de recherche (ticket 025) : `position:absolute` (à poser dans un conteneur `position:relative`), `--surface` + `--r-lg` + `--shadow-md`, `z-index: var(--z-overlay)` pour passer au-dessus des contrôles Leaflet, max-height avec défilement |
+| `.autocomplete-option` | item de suggestion : label (`--text-900`) + contexte secondaire (`--text-700`) ; `.autocomplete-option-active` (fond `--slate-100`) marque l'option naviguée au clavier, doublé par `aria-selected` |
 | `.sr-only` | contenu réservé aux lecteurs d'écran (inchangé) |
 | `.tabular-nums` | chiffres tabulaires (`font-variant-numeric: tabular-nums` + `font-feature-settings: 'tnum'`) pour les prix et montants — posée sur `.jflp-price-badge-price`, `.station-price`, `.rec-amount-value`, `.rec-price`, `.rec-quantity` et la valeur du compteur `.map-counter` (ticket 026) |
 | `.stations-area` | conteneur de la liste des stations (inchangé, ticket 011) |
