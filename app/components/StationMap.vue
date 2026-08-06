@@ -265,14 +265,21 @@ function accessibleName(marker: StationMapMarker): string {
 }
 
 // ——— Marqueur cluster (regroupement des marqueurs superposés ; demande
-// produit + design ui-reference.md §5 « Clusters — disques pleins terracotta
-// avec le nombre de stations »). Le cluster est un vrai point Leaflet :
+// produit + design ui-reference.md §5 « Clusters — disques portant le dégradé
+// de leur station la plus verte »). Le cluster est un vrai point Leaflet :
 // focusable au clavier et cliquable pour zoomer vers son centroïde.
 // L'accessibilité (NFR-ACC-4 : la couleur n'est jamais le seul vecteur) est
 // portée par le nom accessible du marker, pas par un label visuel. ———
 function makeIconCluster(cluster: StationCluster, L: typeof import('leaflet')) {
   const count = cluster.markerIds.length
-  const html = `<span class="jflp-cluster" aria-hidden="true">${count}</span>`
+  // Le cluster porte le dégradé d'attractivité de sa station la plus
+  // « verte » (la moins chère du groupe) : même palette que les marqueurs.
+  // Sans attractivité (référence absente du cluster, données partielles), le
+  // disque reste neutre (terracotta, la valeur par défaut de .jflp-cluster).
+  const tierClass = cluster.attractiveness === null
+    ? ''
+    : `jflp-cluster-tier-${Math.min(4, Math.max(0, Math.round(cluster.attractiveness * 4)))}`
+  const html = `<span class="jflp-cluster ${tierClass}" aria-hidden="true">${count}</span>`
   return L.divIcon({
     className: 'jflp-cluster-marker',
     html,
@@ -313,6 +320,15 @@ function syncClusters(clusters: StationCluster[]) {
         })
       layer.addTo(map)
       clusterLayers.set(key, layer)
+    }
+    // Le cluster est réutilisé par identité de membres ; si son attractivité
+    // a changé (nouveaux prix), on met à jour l'icône du disque existant.
+    const tier = cluster.attractiveness === null
+      ? ''
+      : `jflp-cluster-tier-${Math.min(4, Math.max(0, Math.round(cluster.attractiveness * 4)))}`
+    const current = layer.getElement()?.querySelector('.jflp-cluster')
+    if (current && !current.classList.contains(tier) && tier !== '') {
+      current.className = `jflp-cluster ${tier}`
     }
   }
   for (const [key, layer] of clusterLayers) {
@@ -641,6 +657,10 @@ onBeforeUnmount(() => {
   font-size: 0.78rem;
   padding: 0.3rem 0.6rem;
   white-space: nowrap;
+  /* Fond OPAQUE par défaut (repli sûr avant l'application des paliers) :
+     le badge ne laisse jamais transparaître les tuiles sous-jacentes. */
+  background: var(--surface);
+  border: 1px solid var(--border);
 }
 /* ═══ Dégradé d'attractivité du prix (docs/design/ui-reference.md §4 :
    « la couleur du liseré/fond encode le prix : vert = moins cher, terracotta
@@ -688,20 +708,23 @@ onBeforeUnmount(() => {
 .jflp-price-badge-tier-4 .jflp-price-badge-logo {
   background: var(--surface);
 }
-/* L'ergot suit la couleur du fond (dégradé) au lieu d'être blanc neutre. */
-.jflp-price-badge-tier-0 .jflp-price-badge-arrow {
+/* L'ergot est un FRÈRE du badge (`<span class="...badge">…</span><span
+   class="jflp-price-badge-arrow">`) : on le colore avec le sélecteur de frère
+   adjacent, pour qu'il suive la couleur du fond (dégradé) au lieu d'être
+   blanc neutre. */
+.jflp-price-badge-tier-0 + .jflp-price-badge-arrow {
   border-top-color: var(--marker-tier-0);
 }
-.jflp-price-badge-tier-1 .jflp-price-badge-arrow {
+.jflp-price-badge-tier-1 + .jflp-price-badge-arrow {
   border-top-color: var(--marker-tier-1);
 }
-.jflp-price-badge-tier-2 .jflp-price-badge-arrow {
+.jflp-price-badge-tier-2 + .jflp-price-badge-arrow {
   border-top-color: var(--marker-tier-2);
 }
-.jflp-price-badge-tier-3 .jflp-price-badge-arrow {
+.jflp-price-badge-tier-3 + .jflp-price-badge-arrow {
   border-top-color: var(--marker-tier-3);
 }
-.jflp-price-badge-tier-4 .jflp-price-badge-arrow {
+.jflp-price-badge-tier-4 + .jflp-price-badge-arrow {
   border-top-color: var(--marker-tier-4);
 }
 /* Logo d'enseigne : pastille ronde à gauche du prix (signature visuelle de
@@ -729,6 +752,17 @@ onBeforeUnmount(() => {
 .jflp-price-badge-price {
   font-weight: 800;
 }
+/* Le prix est explicitement BLANC sur tous les paliers du dégradé
+   (--marker-tier-on-fill, ≥ 5,8:1 — NFR-ACC-2) : la spécificité (0,3,0)
+   écrase toute couleur héritée de .pill / .pill-outline et toute atténuation
+   qui délaverait le texte. */
+.jflp-price-badge.jflp-price-badge-tier-0 .jflp-price-badge-price,
+.jflp-price-badge.jflp-price-badge-tier-1 .jflp-price-badge-price,
+.jflp-price-badge.jflp-price-badge-tier-2 .jflp-price-badge-price,
+.jflp-price-badge.jflp-price-badge-tier-3 .jflp-price-badge-price,
+.jflp-price-badge.jflp-price-badge-tier-4 .jflp-price-badge-price {
+  color: var(--marker-tier-on-fill);
+}
 .jflp-price-badge-fresh {
   font-size: 0.72rem;
   line-height: 1;
@@ -743,15 +777,17 @@ onBeforeUnmount(() => {
 }
 /* Marqueur station de référence : liseré supplémentaire discret, en plus du
    texte "station de référence" porté par le nom accessible (NFR-ACC-4). Elle
-   n'a pas d'attractivité (point de comparaison, pas une alternative) : badge
-   neutre (pill-outline). */
+   porte le dégradé comme les autres (son prix égale la base → milieu 0,5) ;
+   le liseré la distingue. */
 .jflp-marker-reference .jflp-price-badge {
   box-shadow: 0 0 0 2px var(--border-strong);
 }
-/* Prix > 24 h (CONTEXT.md §Fraîcheur) : atténué, doublé du glyphe ⏱ et du
-   libellé de fraîcheur dans le nom accessible — jamais la couleur seule. */
+/* Prix > 24 h (CONTEXT.md §Fraîcheur) : signalé SANS transparence ni texte
+   délavé — le badge garde un fond opaque et son prix bien contrasté, la
+   bordure passe en pointillés et le glyphe ⏱ reste (jamais `opacity < 1` :
+   ce serait un fond semi-transparent ou un texte délavé). */
 .jflp-marker-stale .jflp-price-badge {
-  opacity: 0.7;
+  border-style: dashed;
 }
 .jflp-marker:focus-visible .jflp-badge-stack {
   outline: 2px solid var(--focus);
@@ -760,13 +796,14 @@ onBeforeUnmount(() => {
 }
 
 /* ═══ Clusters — regroupement des marqueurs superposés (design
-   ui-reference.md §5 : « disques pleins terracotta avec le nombre de
-   stations, texte blanc »). L'icône Leaflet est un point 0×0 recentré par
-   translate(-50%, -50%) ; le disque porte le nombre (NFR-ACC-4 : jamais la
-   couleur seule), le nom accessible est porté par le marker. Paire de tokens
-   --terracotta-fill / --terracotta-on-fill : fond terracotta avec du texte
-   blanc, lisible (5,8:1). Identique en clair et en sombre (posé sur les
-   tuiles OSM claires, comme les marqueurs de prix). */
+   ui-reference.md §5 : « disques portant le dégradé de leur station la plus
+   verte »). L'icône Leaflet est un point 0×0 recentré par translate(-50%,
+   -50%) ; le disque porte le nombre (NFR-ACC-4 : jamais la couleur seule),
+   le nom accessible est porté par le marker. Fond par défaut
+   --terracotta-fill / --terracotta-on-fill (texte blanc lisible, 5,8:1) ;
+   les paliers --marker-tier-* (mêmes que les marqueurs) prennent le relais
+   quand le cluster a une attractivité connue. Identique en clair et en
+   sombre (posé sur les tuiles OSM claires, comme les marqueurs de prix). */
 .jflp-cluster-marker {
   width: 0;
   height: 0;
@@ -793,6 +830,30 @@ onBeforeUnmount(() => {
   font-size: 0.95rem;
   box-shadow: var(--shadow-md);
   cursor: pointer;
+}
+/* ═══ Clusters dégradés — le disque porte le dégradé d'attractivité de sa
+   station la plus « verte » (la moins chère du groupe), même palette que les
+   marqueurs (docs/design/ui-reference.md §5). Texte blanc (--marker-tier-on-
+   fill, AA) ; sans attractivité le disque reste terracotta (défaut). */
+.jflp-cluster.jflp-cluster-tier-0 {
+  background: var(--marker-tier-0);
+  color: var(--marker-tier-on-fill);
+}
+.jflp-cluster.jflp-cluster-tier-1 {
+  background: var(--marker-tier-1);
+  color: var(--marker-tier-on-fill);
+}
+.jflp-cluster.jflp-cluster-tier-2 {
+  background: var(--marker-tier-2);
+  color: var(--marker-tier-on-fill);
+}
+.jflp-cluster.jflp-cluster-tier-3 {
+  background: var(--marker-tier-3);
+  color: var(--marker-tier-on-fill);
+}
+.jflp-cluster.jflp-cluster-tier-4 {
+  background: var(--marker-tier-4);
+  color: var(--marker-tier-on-fill);
 }
 .jflp-cluster-label {
   position: absolute;

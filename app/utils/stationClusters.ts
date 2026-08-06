@@ -3,8 +3,11 @@
 // des petits périmètres » ; choix produit : clustering dynamique selon le
 // zoom ; design ui-reference.md §5 « Clusters »). Module client pur, sans
 // Leaflet : il décide, pour un rayon d'agrégation donné (dérivé du zoom par
-// la carte), quels marqueurs sont regroupés (centroïde + nombre) et lesquels
-// restent individuels.
+// la carte), quels marqueurs sont regroupés (centroïde + nombre + attractivité
+// du groupe) et lesquels restent individuels.
+//
+// Le cluster porte l'attractivité de sa station la plus « verte » (la moins
+// chère) : le disque suit le dégradé du meilleur prix du groupe.
 //
 // La station de référence et la station recommandée sont des points d'ancrage
 // de l'écran (la réponse) : elles ne sont JAMAIS regroupées — leur badge
@@ -32,6 +35,11 @@ export interface StationCluster {
   markerIds: string[]
   lat: number
   lon: number
+  /** Attractivité du cluster = celle de la station la PLUS attractive (la
+      moins chère, la plus « verte ») du groupe. Le cluster porte le dégradé
+      du meilleur prix : il dit « il y a mieux ici » avant même d'ouvrir.
+      null si aucune station du groupe n'a d'attractivité. */
+  attractiveness: number | null
 }
 
 export interface StationClusterView {
@@ -74,8 +82,19 @@ export function buildStationClusters(
       const lon = ((target.lon * (total - 1)) + marker.lon) / total
       target.lat = lat
       target.lon = lon
+      // Attractivité du cluster : le MAX des membres (la station la plus
+      // « verte »). Une station sans attractivité (null) ne dégrade pas le
+      // cluster : on ne garde que les valeurs connues.
+      if (marker.attractiveness !== null) {
+        target.attractiveness = Math.max(target.attractiveness ?? -Infinity, marker.attractiveness)
+      }
     } else {
-      clusters.push({ markerIds: [marker.id], lat: marker.lat, lon: marker.lon })
+      clusters.push({
+        markerIds: [marker.id],
+        lat: marker.lat,
+        lon: marker.lon,
+        attractiveness: marker.attractiveness
+      })
     }
   }
 

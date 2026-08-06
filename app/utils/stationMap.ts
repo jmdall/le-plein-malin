@@ -45,7 +45,8 @@ export interface StationMapMarker {
   /** > 24 h (CONTEXT.md §Fraîcheur) : affichage atténué + marqueur de fraîcheur. */
   isStale: boolean
   /** Attractivité du prix vs référence, 0…1 (API) : dégradé du badge.
-      null pour la station de référence (point de comparaison). */
+      La référence porte elle aussi la sienne (son prix égale la base →
+      0,5). null seulement si aucune base de prix n'est disponible. */
   attractiveness: number | null
   directionsUrl: string
 }

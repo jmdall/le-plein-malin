@@ -121,8 +121,11 @@ De haut en bas, tout **flottant au-dessus** de la carte (voir
      tuiles claires) ;
    - un « ergot » pointant vers le bas ancre le badge à la station, teinté de
      la même couleur.
-5. **Clusters** — disques pleins terracotta avec le nombre de stations (`2`,
-   `3`), texte blanc.
+5. **Clusters** — disques pleins portant le **dégradé d'attractivité de leur
+   station la plus « verte »** (la moins chère du groupe), même palette que
+   les marqueurs, avec le nombre de stations (`2`, `3`), texte blanc. Un
+   cluster terracotta dit « rien d'intéressant ici », un cluster vert « il y a
+   mieux dans ce groupe ».
 6. **Badge « ★ Recommandée »** — pilule verte pleine, texte blanc, étoile.
    C'est exactement notre notion de station recommandée : réutilise-le.
 7. **Carte de légende** en bas à gauche — carte blanche arrondie, trois lignes

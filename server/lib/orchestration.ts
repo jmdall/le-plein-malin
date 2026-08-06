@@ -368,11 +368,13 @@ export async function buildStationsList(options: {
             })
           : { detourCost: null, grossSavings: null, netSavings: null }
       const freshness = computeFreshness(s.updatedAt, now)
-      // Attractivité du prix vs référence (module pur, bande ±15 %) : nulle
-      // pour la station de référence elle-même (elle est le point de
-      // comparaison, pas une alternative — CONTEXT.md).
+      // Attractivité du prix vs référence (module pur, bande ±15 %). La
+      // référence elle-même en a une aussi : son prix égale la base, donc
+      // elle tombe au MILIEU du dégradé (0,5) — elle reste visuellement
+      // neutre mais n'est plus « sans couleur ». Tous les badges portent le
+      // dégradé (demande produit).
       const attractiveness =
-        referencePrice !== null && !isReference
+        referencePrice !== null
           ? computePriceAttractiveness({ referencePrice, price: s.price })
           : null
       return {

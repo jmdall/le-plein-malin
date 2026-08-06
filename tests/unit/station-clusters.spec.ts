@@ -36,6 +36,7 @@ function marker(id: string, lat: number, lon: number): StationMapMarker {
     freshnessLabel: 'frais',
     ageLabel: '',
     isStale: false,
+    attractiveness: null,
     directionsUrl: 'https://www.openstreetmap.org/directions?from=&to='
   }
 }
@@ -134,5 +135,36 @@ describe('buildStationClusters (clustering des marqueurs superposés)', () => {
     const view = buildStationClusters([], CLUSTER_BASE_RADIUS_KM)
     expect(view.clusters).toHaveLength(0)
     expect(view.individuals).toEqual([])
+  })
+
+  it('le cluster porte l’attractivité de sa station la plus « verte » (max du groupe)', () => {
+    const cheap = marker('a', 48.85, 2.35)
+    cheap.attractiveness = 0.9
+    const mid = marker('b', 48.8515, 2.3515)
+    mid.attractiveness = 0.3
+    const pricey = marker('c', 48.852, 2.352)
+    pricey.attractiveness = 0.15
+    const view = buildStationClusters([cheap, mid, pricey], CLUSTER_BASE_RADIUS_KM)
+    expect(view.clusters).toHaveLength(1)
+    // Le disque suit le MEILLEUR prix du groupe (le plus « vert »).
+    expect(view.clusters[0]!.attractiveness).toBeCloseTo(0.9, 6)
+  })
+
+  it('une attractivité inconnue (null) ne dégrade pas le cluster', () => {
+    const known = marker('a', 48.85, 2.35)
+    known.attractiveness = 0.8
+    const unknown = marker('b', 48.8515, 2.3515)
+    unknown.attractiveness = null
+    const view = buildStationClusters([known, unknown], CLUSTER_BASE_RADIUS_KM)
+    expect(view.clusters).toHaveLength(1)
+    expect(view.clusters[0]!.attractiveness).toBeCloseTo(0.8, 6)
+  })
+
+  it('sans aucune attractivité connue → cluster neutre (null)', () => {
+    const a = marker('a', 48.85, 2.35)
+    const b = marker('b', 48.8515, 2.3515)
+    const view = buildStationClusters([a, b], CLUSTER_BASE_RADIUS_KM)
+    expect(view.clusters).toHaveLength(1)
+    expect(view.clusters[0]!.attractiveness).toBeNull()
   })
 })

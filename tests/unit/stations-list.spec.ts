@@ -58,8 +58,9 @@ describe('buildStationsList (ticket 011, STA-1)', () => {
     expect(ref.distanceKm).toBeCloseTo(0, 6)
     // La référence n'a pas d'économie : elle est le point de comparaison.
     expect(ref.economics).toEqual({ detourCost: null, grossSavings: null, netSavings: null })
-    // Pas d'attractivité non plus : la référence n'est pas une alternative.
-    expect(ref.attractiveness).toBeNull()
+    // La référence porte elle aussi le dégradé : son prix égale la base,
+    // donc elle tombe au milieu (0,5) — jamais de badge sans couleur.
+    expect(ref.attractiveness).toBeCloseTo(0.5, 6)
     expect(ref.freshness.status).toBe('fresh')
 
     const cand = res.stations.find((s) => s.id === 'b')!
