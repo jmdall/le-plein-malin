@@ -8,7 +8,7 @@
 // immédiat de la recommandation fournie par l'API (009) — l'UI ne recalculera
 // jamais les règles (REC-2/D1). États : chargement, erreur, données
 // insuffisantes, fraîcheur > 24 h atténuée.
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useHead } from '#imports'
 import { FUEL_OPTIONS } from '../utils/fuel'
 import { usePreferences, RADIUS_OPTIONS } from '../composables/usePreferences'
@@ -76,6 +76,23 @@ async function run(
   }
 }
 
+// ——— La carte ne bouge QUE sur ordre explicite (« la carte devrait
+// uniquement être bougée par l'user ») : recherche ville/CP, bouton
+// « Recentrer sur ma position ». Le pan ne fait que relancer la recherche,
+// jamais bouger la carte. ———
+// `recenterRequested` porte { lat, lon, token } : StationMap exécute un
+// flyTo à chaque nouveau token. Pour une recherche ville/CP, le centre n'est
+// connu qu'après la réponse de l'API (query.center) : on pose un drapeau et
+// on émet l'ordre dès que les stations de cette recherche arrivent.
+let explicitRecenterPending = false
+const recenterToken = ref(0)
+const recenterRequested = ref<{ lat: number; lon: number; token: number } | null>(null)
+
+function requestRecenter(lat: number, lon: number) {
+  recenterToken.value += 1
+  recenterRequested.value = { lat, lon, token: recenterToken.value }
+}
+
 // ——— Déplacement de la carte (pan) : relance la recherche autour du nouveau
 // centre (demande produit « déplacer la carte devrait afficher les stations »).
 // Le pan émet un centre lat/lon explicite : on relance la recommandation ET
@@ -85,7 +102,10 @@ async function run(
 // fois : si un pan arrive pendant une recherche, on retient le dernier centre
 // et on le rejoue dès que la recherche en cours se termine (sinon les appels
 // API se chevauchent et le dernier répondeur — pas forcément le dernier
-// centre — gagnerait). ———
+// centre — gagnerait).
+// IMPORTANT : un pan ne déplace JAMAIS la carte — c'est l'utilisateur qui
+// vient de la bouger ; on ne fait que rafraîchir les données autour du
+// nouveau centre. ———
 async function onMapRecenter(center: { lat: number; lon: number }) {
   if (mapRecenterInFlight.value) {
     mapRecenterPending.value = center
@@ -115,6 +135,8 @@ async function onMapRecenter(center: { lat: number; lon: number }) {
 async function locate() {
   const result = await geo.request()
   if (result.ok && geo.position.value) {
+    // Ordre explicite : la carte vole vers la position géolocalisée.
+    requestRecenter(geo.position.value.lat, geo.position.value.lon)
     await run(
       {
         lat: geo.position.value.lat,
@@ -152,6 +174,9 @@ function searchByQuery(q: string) {
   geo.setSavedQuery({ source: isPostal ? 'postalCode' : 'city', q: raw })
   saveLocation({ source: isPostal ? 'postalCode' : 'city', q: raw })
   searchMessage.value = null
+  // Recherche ville/CP : ordre explicite de récentrer une fois les stations
+  // de cette recherche arrivées (le centre géocodé vient dans la réponse).
+  explicitRecenterPending = true
   run(payload, raw, 'query')
 }
 
@@ -239,6 +264,16 @@ function reloadWithRadius() {
 const radiusLabel = computed(() => `${prefs.radius.value} km`)
 
 const stationsData = computed(() => stations.state.value.data)
+// Recherche ville/CP : le centre géocodé n'arrive qu'avec la réponse des
+// stations. Quand les stations d'une recherche explicite arrivent, on émet
+// l'ordre de récentrage de la carte (elle ne bouge qu'ainsi, jamais sur un
+// pan). Un pan (recenter) ne pose jamais ce drapeau.
+watch(stationsData, (data) => {
+  if (explicitRecenterPending && data?.query.center) {
+    explicitRecenterPending = false
+    requestRecenter(data.query.center.lat, data.query.center.lon)
+  }
+})
 const loading = computed(() => reco.state.value.status === 'loading')
 const hasRecommendation = computed(
   () => reco.state.value.status === 'success' && reco.state.value.data !== null
@@ -391,6 +426,7 @@ const bottomOverlaysHidden = computed(() => isMobile.value && sheetState.value =
       class="map-layer"
       :result="stationsData"
       :recommended-station-id="recommendedStationId"
+      :recenter-requested="recenterRequested"
       @recenter="onMapRecenter"
     />
 

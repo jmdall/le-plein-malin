@@ -368,6 +368,15 @@ test('déplacer la carte relance la recherche (recommandation + stations) autour
   const initialWithLatLon = apiRequests.filter((u) => u.includes('lat='))
   expect(initialWithLatLon.length).toBe(0)
 
+  // Transform du panneau Leaflet AVANT le pan : reflète le centre initial.
+  const paneTransform = (): Promise<string | null> =>
+    page.evaluate(() => {
+      const pane = document.querySelector('.leaflet-map-pane') as HTMLElement | null
+      return pane ? pane.style.transform : null
+    })
+  const transformInitial = await paneTransform()
+  expect(transformInitial).not.toBeNull()
+
   // Pan : glisser la carte depuis une zone vide (droite-centre, hors des
   // overlays et du panneau latéral).
   const box = (await page.getByTestId('station-map-container').boundingBox())!
@@ -403,4 +412,17 @@ test('déplacer la carte relance la recherche (recommandation + stations) autour
   // la zone explorée reste visible sur la carte).
   const sheet = page.locator('.sheet')
   await expect(sheet).toHaveClass(/sheet-medium/)
+
+  // La carte reste sur la zone pansée : le rafraîchissement des données
+  // (recommandation + stations, centres différés) ne doit PAS la ramener au
+  // centre initial (bug « la carte revient presque où elle était »). Le pan
+  // est le SEUL ordre de déplacement : aucun flyTo ne doit être rejoué.
+  // Le panneau Leaflet est un élément transformé (translate3d) : sa
+  // transform reflète le centre de la carte. Si un flyTo parasite ramenait la
+  // carte au centre initial, la transform reviendrait à `transformInitial`.
+  const transformAfter = await paneTransform()
+  expect(transformAfter).not.toBeNull()
+  // Le pan a déplacé la carte de ~(+260, -120) px : la transform n'est PAS
+  // revenue à la valeur du centre initial (pas de flyTo vers l'ancien centre).
+  expect(transformAfter).not.toBe(transformInitial)
 })

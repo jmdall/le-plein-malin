@@ -24,9 +24,8 @@
 //     prix, la fraîcheur et la recommandation sont toujours doublés de texte ;
 //   - contrôles de zoom ≥ 44 px (NFR-RES-2) et libellés français.
 import { computed, ref, watch, nextTick, onBeforeUnmount } from 'vue'
-import { buildStationMapView, buildPopupHtml, escapeHtml } from '../utils/stationMap'
+import { buildStationMapView, buildPopupHtml, escapeHtml, MAP_START_ZOOM } from '../utils/stationMap'
 import { animateMarkerLatLng, rafScheduler } from '../utils/mapAnimation'
-import { sameCenter, shouldRecenter } from '../utils/mapRecenter'
 import type { StationMapView, StationMapMarker } from '../utils/stationMap'
 import { buildStationClusters, clusterRadiusKmForZoom } from '../utils/stationClusters'
 import type { StationCluster } from '../utils/stationClusters'
@@ -36,6 +35,13 @@ import type { StationsQueryResult } from '../utils/stations'
 const props = defineProps<{
   result: StationsQueryResult | null
   recommendedStationId?: string | null
+  /** Ordre explicite de déplacer la carte : { lat, lon, token }.
+   *  La carte ne se déplace JAMAIS seule — pas au rafraîchissement des
+   *  données, pas pendant une recherche déclenchée par un pan. Seul un
+   *  changement de `token` (nouvel ordre émis par la page : recherche
+   *  ville/CP, bouton « Recentrer », clic sur un marqueur) déclenche un
+   *  flyTo. Le pan de l'utilisateur garde le contrôle de la carte. */
+  recenterRequested?: { lat: number; lon: number; token: number } | null
 }>()
 
 // ——— Recherche au déplacement (demande produit : déplacer la carte doit
@@ -74,7 +80,6 @@ let markerLayers = new Map<string, import('leaflet').Marker>()
 let markerIconSignatures = new Map<string, string>()
 let clusterLayers = new Map<string, import('leaflet').Marker>()
 let resizeObserver: ResizeObserver | null = null
-let lastFlownCenter: { lat: number; lon: number; zoom: number } | null = null
 
 const markerCount = computed(() => view.value.markers.length)
 
@@ -107,63 +112,46 @@ watch(
   () => {
     if (import.meta.client && map) {
       syncMarkers()
-      recenterIfNeeded()
     }
   }
 )
 
-// ——— Recentre la carte déjà montée quand la position de recherche change
-// (nouvelle recherche, bouton « Recentrer sur ma position »). On évite de
-// rejouer un flyTo identique à chaque simple rafraîchissement de marqueurs.
-// La décision est déléguée à utils/mapRecenter.ts (module pur testé).
-//
-// Cas critique : recherche déclenchée par un pan. La recommandation répond
-// avant la liste des stations : le rebuild intermédiaire porte ENCORE
-// l'ancien centre, et un flyTo dessus ramènerait la carte « presque où elle
-// était » juste après le déplacement de l'utilisateur. Tant qu'un centre de
-// pan (pendingRecenterTarget) est en vol, on ne recentre PAS — l'utilisateur
-// contrôle la carte. ———
-let pendingRecenterTarget: { lat: number; lon: number } | null = null
+// ——— La carte ne se déplace QUE sur ordre explicite (demande produit « la
+// carte devrait uniquement être bougée par l'user »). Un rafraîchissement des
+// données (nouvelle recherche ville/CP, bouton recentrer, mais AUSSI les
+// données d'une recherche déclenchée par un pan) ne déclenche JAMAIS de
+// déplacement de la carte : la carte reste où l'utilisateur l'a mise. Seul un
+// changement de `recenterRequested.token` (ordre explicite de la page) fait
+// voler la carte vers une position. ———
+let lastRecenterToken = 0
 
-function recenterIfNeeded() {
-  if (!map) return
-  const center = view.value.center
-  if (!center) {
-    // Pas de centre (données absentes / recherche en erreur) : la recherche
-    // par pan a résolu sans données — on relâche le verrou de recentrage.
-    clearPendingRecenter()
-    return
-  }
-  // Le centre du pan a rejoint les données : la recherche par pan est
-  // terminée, on relâche le verrou.
-  if (pendingRecenterTarget && sameCenter(center, pendingRecenterTarget)) {
-    clearPendingRecenter()
-  }
-  // La comparaison se fait sur lat/lon SEULS (le zoom de `view.center` est
-  // toujours le zoom de départ MAP_START_ZOOM, alors que `lastFlownCenter`
-  // porte le zoom réel de la carte après un pan/zoom utilisateur) : un même
-  // centre n'est jamais re-flyé, et le flyTo garde le zoom courant via
-  // Math.max.
-  const { fly, target } = shouldRecenter({
-    dataCenter: { lat: center.lat, lon: center.lon },
-    panSearchCenter: pendingRecenterTarget,
-    lastFlownCenter: lastFlownCenter ? { lat: lastFlownCenter.lat, lon: lastFlownCenter.lon } : null
-  })
-  if (!fly || !target) return
-  // Un re-centrage programmatique arrive justement sur le centre de recherche :
-  // le `dragend` d'un éventuel pan en cours n'étant pas concerné, rien à
-  // supprimer ici. On annule simplement un debounce de pan en cours pour ne
-  // pas rejouer l'ancien centre.
+function flyToRequested(request: { lat: number; lon: number; token: number }) {
+  if (!map || import.meta.server) return
+  if (request.token === lastRecenterToken) return
+  lastRecenterToken = request.token
+  // On annule un debounce de pan en cours pour ne pas rejouer l'ancien
+  // centre juste après un ordre de récentrage explicite.
   cancelRecenter()
-  lastFlownCenter = { ...center }
-  map.flyTo([target.lat, target.lon], Math.max(map.getZoom(), center.zoom))
+  map.flyTo([request.lat, request.lon], Math.max(map.getZoom(), MAP_START_ZOOM))
 }
+
+watch(
+  () => props.recenterRequested,
+  (request) => {
+    if (!request) return
+    flyToRequested(request)
+  }
+)
 
 // ——— Fin d'un pan utilisateur → recherche au nouveau centre ———
 // `dragend` est déclenché à la fin d'un drag réel ; l'évènement porte le
 // centre courant du viewport. Un seuil de distance (relative au rayon affiché
 // à l'écran) évite de relancer une recherche quasi identique pour un
 // micro-déplacement ; le debounce coalesce les drags rapides.
+// Le pan NE DÉPLACE PAS la carte : il émet `recenter` pour relancer la
+// recherche autour du nouveau centre ; les données reviendront avec
+// query.center = ce centre, mais la carte ne bougera pas pour autant (elle
+// est déjà où l'utilisateur l'a laissée).
 const RECENTER_DEBOUNCE_MS = 500
 const RECENTER_MIN_DRAG_FRACTION = 0.15
 let lastRecenterCenter: { lat: number; lon: number } | null = null
@@ -174,10 +162,6 @@ function onMapDragEnd() {
   const centerLat = center.lat
   const centerLng = center.lng
   const zoom = map.getZoom()
-  // Le pan « réclame » le centre courant : quand les nouvelles données
-  // arrivent avec query.center = ce centre, recenterIfNeeded ne doit pas
-  // rejouer un flyTo (il ne ferait que lutter contre le déplacement).
-  lastFlownCenter = { lat: centerLat, lon: centerLng, zoom }
   // Largeur d'écran en km au zoom courant — borne la « taille » d'un drag
   // en coordonnées monde pour le seuil relatif.
   const metersPerPixel = 40075016.686 * Math.cos((centerLat * Math.PI) / 180) / Math.pow(2, zoom + 8)
@@ -197,7 +181,6 @@ function onMapDragEnd() {
   recenterTimer = setTimeout(() => {
     recenterTimer = null
     lastRecenterCenter = null
-    pendingRecenterTarget = { lat: centerLat, lon: centerLng }
     emit('recenter', { lat: centerLat, lon: centerLng })
   }, RECENTER_DEBOUNCE_MS)
 }
@@ -207,12 +190,6 @@ function cancelRecenter() {
     clearTimeout(recenterTimer)
     recenterTimer = null
   }
-}
-
-// ——— Fin d'une recherche déclenchée par un pan : le centre du pan a été
-// appliqué (ou abandonné), on relâche le verrou de recentrage. ———
-function clearPendingRecenter() {
-  pendingRecenterTarget = null
 }
 
 async function ensureMap() {
@@ -242,7 +219,6 @@ async function ensureMap() {
       attributionControl: true,
       keyboard: true
     })
-    lastFlownCenter = center
 
     L.control
       .zoom({ position: 'bottomright', zoomInTitle: 'Zoomer', zoomOutTitle: 'Dézoomer' })
@@ -262,6 +238,11 @@ async function ensureMap() {
     })
 
     syncMarkers()
+    // Un ordre de récentrage a pu arriver avant l'init de la carte : on
+    // l'applique maintenant.
+    if (props.recenterRequested) {
+      flyToRequested(props.recenterRequested)
+    }
     // Clustering dynamique selon le zoom (choix produit) : à chaque
     // changement de zoom, on recalcule clusters ET marqueurs individuels —
     // les stations qui ne se chevauchent plus après un zoom avant
