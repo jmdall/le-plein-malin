@@ -25,6 +25,8 @@
 //   - contrôles de zoom ≥ 44 px (NFR-RES-2) et libellés français.
 import { computed, ref, watch, nextTick, onBeforeUnmount } from 'vue'
 import { buildStationMapView, buildPopupHtml, escapeHtml } from '../utils/stationMap'
+import { animateMarkerLatLng, rafScheduler } from '../utils/mapAnimation'
+import { sameCenter, shouldRecenter } from '../utils/mapRecenter'
 import type { StationMapView, StationMapMarker } from '../utils/stationMap'
 import { buildStationClusters, clusterRadiusKmForZoom } from '../utils/stationClusters'
 import type { StationCluster } from '../utils/stationClusters'
@@ -113,28 +115,48 @@ watch(
 // ——— Recentre la carte déjà montée quand la position de recherche change
 // (nouvelle recherche, bouton « Recentrer sur ma position »). On évite de
 // rejouer un flyTo identique à chaque simple rafraîchissement de marqueurs.
-// Comparaison sur lat/lon SEULS (le zoom de `view.center` est toujours le zoom
-// de départ MAP_START_ZOOM, alors que `lastFlownCenter` porte le zoom réel de
-// la carte après un pan/zoom utilisateur) : un même centre n'est jamais
-// re-flyé, et le flyTo garde le zoom courant via Math.max. ———
+// La décision est déléguée à utils/mapRecenter.ts (module pur testé).
+//
+// Cas critique : recherche déclenchée par un pan. La recommandation répond
+// avant la liste des stations : le rebuild intermédiaire porte ENCORE
+// l'ancien centre, et un flyTo dessus ramènerait la carte « presque où elle
+// était » juste après le déplacement de l'utilisateur. Tant qu'un centre de
+// pan (pendingRecenterTarget) est en vol, on ne recentre PAS — l'utilisateur
+// contrôle la carte. ———
+let pendingRecenterTarget: { lat: number; lon: number } | null = null
+
 function recenterIfNeeded() {
   if (!map) return
   const center = view.value.center
-  if (!center) return
-  if (
-    lastFlownCenter &&
-    lastFlownCenter.lat === center.lat &&
-    lastFlownCenter.lon === center.lon
-  ) {
+  if (!center) {
+    // Pas de centre (données absentes / recherche en erreur) : la recherche
+    // par pan a résolu sans données — on relâche le verrou de recentrage.
+    clearPendingRecenter()
     return
   }
+  // Le centre du pan a rejoint les données : la recherche par pan est
+  // terminée, on relâche le verrou.
+  if (pendingRecenterTarget && sameCenter(center, pendingRecenterTarget)) {
+    clearPendingRecenter()
+  }
+  // La comparaison se fait sur lat/lon SEULS (le zoom de `view.center` est
+  // toujours le zoom de départ MAP_START_ZOOM, alors que `lastFlownCenter`
+  // porte le zoom réel de la carte après un pan/zoom utilisateur) : un même
+  // centre n'est jamais re-flyé, et le flyTo garde le zoom courant via
+  // Math.max.
+  const { fly, target } = shouldRecenter({
+    dataCenter: { lat: center.lat, lon: center.lon },
+    panSearchCenter: pendingRecenterTarget,
+    lastFlownCenter: lastFlownCenter ? { lat: lastFlownCenter.lat, lon: lastFlownCenter.lon } : null
+  })
+  if (!fly || !target) return
   // Un re-centrage programmatique arrive justement sur le centre de recherche :
   // le `dragend` d'un éventuel pan en cours n'étant pas concerné, rien à
   // supprimer ici. On annule simplement un debounce de pan en cours pour ne
   // pas rejouer l'ancien centre.
   cancelRecenter()
-  lastFlownCenter = center
-  map.flyTo([center.lat, center.lon], Math.max(map.getZoom(), center.zoom))
+  lastFlownCenter = { ...center }
+  map.flyTo([target.lat, target.lon], Math.max(map.getZoom(), center.zoom))
 }
 
 // ——— Fin d'un pan utilisateur → recherche au nouveau centre ———
@@ -175,6 +197,7 @@ function onMapDragEnd() {
   recenterTimer = setTimeout(() => {
     recenterTimer = null
     lastRecenterCenter = null
+    pendingRecenterTarget = { lat: centerLat, lon: centerLng }
     emit('recenter', { lat: centerLat, lon: centerLng })
   }, RECENTER_DEBOUNCE_MS)
 }
@@ -184,6 +207,12 @@ function cancelRecenter() {
     clearTimeout(recenterTimer)
     recenterTimer = null
   }
+}
+
+// ——— Fin d'une recherche déclenchée par un pan : le centre du pan a été
+// appliqué (ou abandonné), on relâche le verrou de recentrage. ———
+function clearPendingRecenter() {
+  pendingRecenterTarget = null
 }
 
 async function ensureMap() {
@@ -270,6 +299,28 @@ function accessibleName(marker: StationMapMarker): string {
 // focusable au clavier et cliquable pour zoomer vers son centroïde.
 // L'accessibilité (NFR-ACC-4 : la couleur n'est jamais le seul vecteur) est
 // portée par le nom accessible du marker, pas par un label visuel. ———
+
+// ——— Mise à jour fluide d'un marqueur existant (pan → nouvelles coordonnées
+// des stations, clustering). Le marqueur Leaflet est un divIcon posé en dur
+// sur la coordonnée : un `setLatLng` direct pendant le pan le ferait « sauter »
+// d'une station à l'autre. On anime donc le passage progressif au point visé
+// (interpolation linéaire de la lat/lon, utils/mapAnimation.ts) — le badge
+// reste fixé à la station et glisse avec elle, au lieu de disparaître/
+// réapparaître (demande produit « déplacer la carte devrait y aller
+// progressivement »). ———
+function setMarkerLatLng(layer: import('leaflet').Marker, target: { lat: number; lon: number }) {
+  if (leaflet) {
+    animateMarkerLatLng(
+      layer,
+      { lat: target.lat, lng: target.lon },
+      // Le RAF réel : l'animation suit le composé de la carte, pas un timer.
+      rafScheduler
+    )
+  } else {
+    layer.setLatLng([target.lat, target.lon])
+  }
+}
+
 function makeIconCluster(cluster: StationCluster, L: typeof import('leaflet')) {
   const count = cluster.markerIds.length
   // Le cluster porte le dégradé d'attractivité de sa station la plus
@@ -319,10 +370,22 @@ function syncClusters(clusters: StationCluster[]) {
           }
         })
       layer.addTo(map)
+      // Le disque apparaît en fondu, comme les marqueurs (rien ne saute).
+      const el = layer.getElement()
+      if (el) {
+        el.style.opacity = '0'
+        requestAnimationFrame(() => {
+          el.style.transition = 'opacity 0.25s ease'
+          el.style.opacity = '1'
+        })
+      }
       clusterLayers.set(key, layer)
     }
-    // Le cluster est réutilisé par identité de membres ; si son attractivité
-    // a changé (nouveaux prix), on met à jour l'icône du disque existant.
+    // Le cluster est réutilisé par identité de membres : son centroïde peut
+    // se déplacer (membres recombinés au pan/zoom) — on l'anime, comme les
+    // marqueurs. Si son attractivité a changé (nouveaux prix), on met à jour
+    // l'icône du disque existant.
+    setMarkerLatLng(layer, { lat: cluster.lat, lon: cluster.lon })
     const tier = cluster.attractiveness === null
       ? ''
       : `jflp-cluster-tier-${Math.min(4, Math.max(0, Math.round(cluster.attractiveness * 4)))}`
@@ -437,20 +500,32 @@ function syncMarkers() {
           }
         })
       layer.addTo(map)
+      // Le badge apparaît en fondu (rien ne « pop »).
+      const el = layer.getElement()
+      if (el) {
+        el.style.opacity = '0'
+        requestAnimationFrame(() => {
+          el.style.transition = 'opacity 0.25s ease'
+          el.style.opacity = '1'
+        })
+      }
       markerLayers.set(id, layer)
     }
+    // La position suit TOUJOURS la station (même si l'apparence ne change
+    // pas) : quand le pan renvoie de nouvelles coordonnées, le badge glisse
+    // progressivement au lieu de sauter (demande produit).
+    setMarkerLatLng(layer, { lat: marker.lat, lon: marker.lon })
     const signature = iconSignature(marker)
     if (markerIconSignatures.get(id) !== signature) {
       layer.setIcon(makeIcon(marker, leaflet))
-      layer.setLatLng([marker.lat, marker.lon])
-      layer.options.title = accessibleName(marker)
-      layer.options.alt = accessibleName(marker)
       layer.setZIndexOffset(marker.isRecommended ? 2000 : marker.isReference ? 1000 : 0)
       // Le contenu de la popup doit suivre l'état (prix / fraîcheur) : la
       // réouvrir si elle était ouverte sur ce marqueur.
       if (layer.isPopupOpen()) {
         layer.setPopupContent(buildPopupHtml(marker))
       }
+      layer.options.title = accessibleName(marker)
+      layer.options.alt = accessibleName(marker)
       markerIconSignatures.set(id, signature)
     }
   }
