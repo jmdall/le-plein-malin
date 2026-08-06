@@ -464,7 +464,16 @@ const bottomOverlaysHidden = computed(() => isMobile.value && sheetState.value =
         <p class="map-legend-row"><span class="badge-dot" style="color: var(--marker-rupture)" />Prix périmé</p>
       </div>
       <p class="pill pill-raised map-counter" role="status">
-        ⛽ {{ stationCountLabel }} station{{ stationCount > 1 ? 's' : '' }}
+        <template v-if="loading">
+          <!-- Spinner décoratif (aria-hidden) : le texte « Recherche des
+               stations… » porte l'information accessible. Le compte réel
+               revient quand les données arrivent — jamais un nombre figé. -->
+          <span class="map-counter-spinner" aria-hidden="true" />
+          Recherche des stations…
+        </template>
+        <template v-else>
+          ⛽ <span class="tabular-nums">{{ stationCountLabel }}</span> station{{ stationCount > 1 ? 's' : '' }}
+        </template>
       </p>
       <p v-if="stationsData" class="map-attribution" role="note">
         {{ OSM_ATTRIBUTION_NOTE }}{{ stationsData.attribution?.source ? ' — ' + stationsData.attribution.source : '' }}
@@ -649,6 +658,24 @@ const bottomOverlaysHidden = computed(() => isMobile.value && sheetState.value =
 }
 .map-counter {
   align-self: flex-start;
+}
+/* Spinner du compteur (ticket 026) : disque en rotation. L'animation est
+   coupée globalement par `prefers-reduced-motion: reduce`
+   (assets/css/main.css) — auquel cas le disque reste immobile, la pilule
+   continuant de porter le texte « Recherche des stations… ». */
+.map-counter-spinner {
+  flex: none;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: transparent;
+  animation: map-counter-spin 0.8s linear infinite;
+}
+@keyframes map-counter-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .map-attribution {
   margin: 0;

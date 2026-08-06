@@ -337,6 +337,20 @@ button {
   background: currentColor;
 }
 
+/* .tabular-nums — chiffres tabulaires (font-variant-numeric) : chaque chiffre
+   occupe une largeur fixe, les prix et montants alignés ne « dansent » pas
+   quand ils changent (docs/research/pouvoirachatplus-carte.md §5-4).
+   font-feature-settings "tnum" en renfort pour les moteurs qui ne déduisent
+   pas la fonctionnalité de font-variant-numeric. S'applique aux prix et
+   montants : badge prix carte (.jflp-price-badge-price), prix liste
+   (.station-price), montant/prix/quantité recommandation (.rec-amount-value,
+   .rec-price, .rec-quantity) et compteur de stations (.map-counter). Aucune
+   nouvelle police : la fonctionnalité ouverte par la police en place. */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    5. PRIMITIVES — boutons (cibles ≥ 44 px, NFR-RES-2)
    ═════════════════════════════════════════════════════════════════════════ */

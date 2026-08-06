@@ -327,6 +327,7 @@ La page carte doit poser ses overlays **entre** les deux :
 | `.segmented-tab` | onglet inactif : ≥ 44 px, pilule transparente, texte `--text-700` |
 | `.segmented-tab-active` | onglet actif : pilule `--accent` pleine, texte `--accent-contrast` |
 | `.sr-only` | contenu réservé aux lecteurs d'écran (inchangé) |
+| `.tabular-nums` | chiffres tabulaires (`font-variant-numeric: tabular-nums` + `font-feature-settings: 'tnum'`) pour les prix et montants — posée sur `.jflp-price-badge-price`, `.station-price`, `.rec-amount-value`, `.rec-price`, `.rec-quantity` et la valeur du compteur `.map-counter` (ticket 026) |
 | `.stations-area` | conteneur de la liste des stations (inchangé, ticket 011) |
 | `components/BrandBadge.vue` | pastille d'enseigne : logo (décoratif, `alt=""`, recadré serré — `object-fit: cover`) ou repli initiale, nom en texte à côté — le nom réel de la station prime (NFR-ACC-4, ticket 021). Les logos servis par l'app (public/brands/, ex. TotalEnergies) priment sur celui de Wikimedia |
 
@@ -348,6 +349,11 @@ du composant) :
   neutralise pas** dans un composant ;
 - `prefers-reduced-motion: reduce` coupe transitions et animations ;
 - `a { color: var(--accent) }`, `body` sur `--bg` / `--text-900`.
+
+Le compteur « ⛽ N stations » (pilule `.map-counter` de la page carte)
+affiche un **spinner décoratif** (`aria-hidden`) + « Recherche des stations… »
+pendant le chargement, puis le **nombre réel** de stations retournées — jamais
+un nombre figé ni inventé (ticket 026).
 
 ### Ce que fait `app.vue`
 

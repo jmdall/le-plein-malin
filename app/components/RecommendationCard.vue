@@ -134,7 +134,7 @@ function togglePanel() {
 
     <div v-if="amountValue !== null && amountValue !== undefined" class="rec-amount" :class="amountTone">
       <span class="rec-amount-label">{{ amountIsNet ? 'Économie nette' : 'Économie brute' }}</span>
-      <span class="rec-amount-value" :data-testid="amountIsNet ? 'net-savings' : 'gross-savings'">
+      <span class="rec-amount-value tabular-nums" :data-testid="amountIsNet ? 'net-savings' : 'gross-savings'">
         {{ formatCurrency(amountValue) }}
       </span>
       <span v-if="amountIsNet && detourCost !== null && detourCost !== undefined" class="rec-amount-detail">
@@ -155,10 +155,10 @@ function togglePanel() {
         <FuelBadge v-if="fuelLabel" :fuel="fuelLabel" />
       </p>
       <p v-if="stationCity" class="rec-station-city">{{ stationCity }}</p>
-      <p v-if="price !== undefined && price !== null" class="rec-price">
+      <p v-if="price !== undefined && price !== null" class="rec-price tabular-nums">
         {{ formatPrice(price) }}
       </p>
-      <p v-if="quantity !== null && quantity !== undefined" class="rec-quantity">
+      <p v-if="quantity !== null && quantity !== undefined" class="rec-quantity tabular-nums">
         Volume conseillé : {{ formatQuantity(quantity) }}
       </p>
     </section>

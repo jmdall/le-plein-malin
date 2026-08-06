@@ -408,7 +408,7 @@ function makeIcon(marker: StationMapMarker, L: typeof import('leaflet')) {
     recoHtml +
     `<span class="pill pill-raised jflp-price-badge ${tierClass}">` +
     logoHtml +
-    `<span class="jflp-price-badge-price">${marker.markerPriceLabel}</span>` +
+    `<span class="jflp-price-badge-price tabular-nums">${marker.markerPriceLabel}</span>` +
     freshHtml +
     `</span>` +
     `<span class="jflp-price-badge-arrow" aria-hidden="true"></span>` +

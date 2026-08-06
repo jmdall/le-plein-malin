@@ -96,7 +96,7 @@ const priceTone = computed(() => {
       </div>
 
       <div class="station-price-col">
-        <span class="station-price" :data-tone="priceTone" data-testid="station-price">{{ priceLabel }}</span>
+        <span class="station-price tabular-nums" :data-tone="priceTone" data-testid="station-price">{{ priceLabel }}</span>
         <FuelBadge v-if="fuelLabel" :fuel="fuelLabel" />
       </div>
     </div>
