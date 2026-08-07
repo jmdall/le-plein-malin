@@ -1,7 +1,7 @@
 ---
 id: 029
 titre: Module HTTP client unique (apiFetch) — dédupliquer useStations et useFuelRecommendation
-statut: ready-for-agent
+statut: done
 dependances: []
 priorite: P2
 estimation: M
