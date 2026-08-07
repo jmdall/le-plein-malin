@@ -17,6 +17,7 @@
 // persistée ni loggée (LOC-4, NFR-SEC-4) : seul le centroïde géocodé ou le
 // centre du rayon transite en mémoire.
 import { inArray } from 'drizzle-orm'
+import { computeDetourKm } from '../../domain/fuel-prices/detour'
 import { haversineKm } from '../../domain/fuel-prices/haversine'
 import { computeFreshness } from '../../domain/fuel-prices/freshness'
 import { computeCandidateEconomics } from '../../domain/fuel-prices/economics'
@@ -356,7 +357,7 @@ export async function buildStationsList(options: {
 
     const listed: ListedStation[] = withDistance.map((s) => {
       const isReference = reference !== undefined && s.id === reference.id
-      const detourDistanceKm = Math.max(0, s.distanceKm - (refDistance ?? 0)) * 2
+      const detourDistanceKm = computeDetourKm(s.distanceKm, refDistance ?? 0)
       const economics =
         referencePrice !== null && vehicle && reference !== undefined && reference.id !== s.id
           ? computeCandidateEconomics({
@@ -473,7 +474,7 @@ export function buildRecommendationInput(options: {
     .filter((s) => s.id !== reference.id)
     .map((s) => ({
       station: toStationPriceWithDistance(s),
-      detourDistanceKm: Math.max(0, s.distanceKm - ref.distanceKm) * 2
+      detourDistanceKm: computeDetourKm(s.distanceKm, ref.distanceKm)
     }))
 
   return {
