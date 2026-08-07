@@ -3,7 +3,7 @@
 // fraîcheur (rules 24/48 h) et grandeurs d'économie (formules CONTEXT.md) ;
 // le client ne recalcule rien. La référence est marquée isReference.
 import { describe, expect, it } from 'vitest'
-import { buildStationsList } from '../../server/lib/orchestration'
+import { buildStationsList } from '../../server/lib/api-response-builder'
 import type { FuelPriceProvider } from '../../server/providers/types'
 import type { StationPrice, FuelType } from '../../domain/fuel-prices/types'
 

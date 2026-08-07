@@ -3,7 +3,7 @@
 // (table vehicle_profile, 006) ; un profil par défaut est créé si absent
 // (jamais bloquant). Sans compte utilisateur. Aucune position stockée.
 import { createDb } from '../db/client'
-import { isApiError } from '../lib/orchestration'
+import { isApiError } from '../lib/api-errors'
 import { createVehicleProfileRepository } from '../repositories/vehicleProfile'
 
 export default defineEventHandler(async () => {

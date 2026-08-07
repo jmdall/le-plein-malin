@@ -11,14 +11,13 @@ import { createJsonExportProvider } from '../providers/jsonExport'
 import { createRoulezEcoProvider } from '../providers/roulezoeco'
 import { createCacheProvider } from '../providers/cacheProvider'
 import { createGeocodeProvider } from '../lib/geocode'
+import { createApiError, isApiError } from '../lib/api-errors'
+import { resolveCenter } from '../lib/station-mapping'
+import { buildRecommendationResponse } from '../lib/api-response-builder'
 import {
-  buildRecommendationResponse,
-  createApiError,
-  isApiError,
   loadDefaultVehicleProfile,
-  resolveCenter,
   toDomainVehicle
-} from '../lib/orchestration'
+} from '../lib/vehicle-profile-mapping'
 
 export default defineEventHandler(async (event) => {
   const { db, sqlite } = createDb()

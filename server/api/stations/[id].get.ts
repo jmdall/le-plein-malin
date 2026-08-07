@@ -3,11 +3,8 @@
 // précise n'est jamais persistée ni loggée (LOC-4, NFR-SEC-4).
 import { stationIdSchema } from '../../lib/validation'
 import { createDb } from '../../db/client'
-import {
-  buildStationDetailResponse,
-  createApiError,
-  isApiError
-} from '../../lib/orchestration'
+import { createApiError, isApiError } from '../../lib/api-errors'
+import { buildStationDetailResponse } from '../../lib/api-response-builder'
 
 export default defineEventHandler(async (event) => {
   const { db, sqlite } = createDb()

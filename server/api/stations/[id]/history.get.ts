@@ -4,11 +4,8 @@
 // Zod sur le paramètre fuel (NFR-SEC-2). Aucune règle métier testée ici.
 import { historyQuerySchema, stationIdSchema } from '../../../lib/validation'
 import { createDb } from '../../../db/client'
-import {
-  buildTrendResponse,
-  createApiError,
-  isApiError
-} from '../../../lib/orchestration'
+import { createApiError, isApiError } from '../../../lib/api-errors'
+import { buildTrendResponse } from '../../../lib/api-response-builder'
 
 export default defineEventHandler(async (event) => {
   const { db, sqlite } = createDb()

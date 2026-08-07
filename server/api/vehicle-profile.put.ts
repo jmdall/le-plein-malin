@@ -4,7 +4,7 @@
 // capacité, fuel ∈ 6, quantité ≥ 0, seuil ≥ 0 — défaut 1). Aucun compte,
 // aucune position stockée. Retourne le profil enregistré.
 import { createDb } from '../db/client'
-import { createApiError, isApiError } from '../lib/orchestration'
+import { createApiError, isApiError } from '../lib/api-errors'
 import { createVehicleProfileRepository } from '../repositories/vehicleProfile'
 import { vehicleProfileSchema } from '../lib/validation'
 
