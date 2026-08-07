@@ -74,8 +74,7 @@ function makeInput(overrides: {
     threshold: overrides.threshold ?? 1,
     trend: overrides.trend ?? { direction: 'stable' as const, magnitude: 0.02 },
     hasGeoLocation: overrides.hasGeoLocation ?? true,
-    now: NOW,
-    freshnessLimits: { staleAfterHours: 24, obsoleteAfterHours: 48 }
+    now: NOW
   }
 }
 

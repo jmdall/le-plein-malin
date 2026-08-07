@@ -482,8 +482,6 @@ export interface FuelRecommendationInput {
   referenceStation: StationPrice
   candidates: CandidateWithDistance[]
   threshold: number              // €, défaut 1
-  freshnessLimits: { staleAfterHours: number; obsoleteAfterHours: number }
-  // défauts : 24 et 48
 }
 
 export type RecommendationType =

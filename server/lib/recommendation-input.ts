@@ -63,7 +63,6 @@ export function buildRecommendationInput(options: {
       referenceStation: empty,
       candidates: [],
       threshold,
-      freshnessLimits: { staleAfterHours: 24, obsoleteAfterHours: 48 },
       now,
       trend: options.trend,
       hasGeoLocation: center.mode === 'geo'
@@ -92,7 +91,6 @@ export function buildRecommendationInput(options: {
     referenceStation: reference,
     candidates,
     threshold,
-    freshnessLimits: { staleAfterHours: 24, obsoleteAfterHours: 48 },
     now,
     trend: options.trend,
     hasGeoLocation: center.mode === 'geo'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeFreshness } from '../../domain/fuel-prices/freshness'
+import { computeFreshness, computeFreshnessScore } from '../../domain/fuel-prices/freshness'
 
 // Règles de fraîcheur (spec §6, CONTEXT.md) : fresh ≤ 24 h, stale 24–48 h,
 // obsolete > 48 h. Score décroissant 0..1 : 1 jusqu'à 24 h, puis linéaire
@@ -55,5 +55,32 @@ describe('computeFreshness', () => {
     expect(score25h).toBeCloseTo(1 - 1 / 24, 6)
     expect(score30h).toBeCloseTo(1 - 6 / 24, 6)
     expect(score30h).toBeLessThan(score25h)
+  })
+})
+
+describe('computeFreshnessScore', () => {
+  it('âge 0 → score 1', () => {
+    expect(computeFreshnessScore(0)).toBe(1)
+  })
+
+  it('24 h pile → score 1 (borne inclusive)', () => {
+    expect(computeFreshnessScore(24)).toBe(1)
+  })
+
+  it('36 h → score 0.5 (linéaire entre 24 et 48)', () => {
+    expect(computeFreshnessScore(36)).toBeCloseTo(0.5, 6)
+  })
+
+  it('48 h pile → score 0 (borne inclusive)', () => {
+    expect(computeFreshnessScore(48)).toBe(0)
+  })
+
+  it('au-delà de 48 h → score 0', () => {
+    expect(computeFreshnessScore(72)).toBe(0)
+  })
+
+  it('mêmes valeurs que computeFreshness (seam unique)', () => {
+    expect(computeFreshnessScore(25)).toBeCloseTo(computeFreshness(hoursAgo(25), NOW).score, 6)
+    expect(computeFreshnessScore(30)).toBeCloseTo(computeFreshness(hoursAgo(30), NOW).score, 6)
   })
 })

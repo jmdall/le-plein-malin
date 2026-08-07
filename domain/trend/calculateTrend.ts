@@ -1,4 +1,5 @@
 import type { TrendIndicators, TrendInput } from './types'
+import { computeFreshnessScore } from '../fuel-prices/freshness'
 
 // domain/trend/calculateTrend.ts — ticket 005, spec §5.7 (TRE-2/TRE-3),
 // ADR-0004 : tendance déterministe et explicable (moyenne, médiane,
@@ -13,10 +14,6 @@ const WINDOW_7D_MS = 7 * 24 * 3_600_000
 // pèsent davantage (demi-vie de 7 jours). Déterministe et explicable.
 const DECAY_HALF_LIFE_MS = 7 * 24 * 3_600_000
 const DECAY_HALF_LIFE_LOG2 = Math.log(2) / DECAY_HALF_LIFE_MS
-
-// Règles 24 h / 48 h (spec §6, TRE-5) — cohérent avec domain/fuel-prices/freshness.
-const FRESH_LIMIT_MS = 24 * 3_600_000
-const OBSOLETE_LIMIT_MS = 48 * 3_600_000
 
 // Seuil relatif de stabilité : |variation relative| < 0,5 % → « stable ».
 const STABLE_THRESHOLD = 0.005
@@ -74,7 +71,11 @@ export function calculateTrendIndicators(input: TrendInput): TrendIndicators {
     change7d: change7d?.abs ?? null,
     change7dPercent: change7d?.rel ?? null,
     trend,
-    freshnessScore: computeFreshnessScore(snapshots, input.now)
+    // Fraîcheur du dernier snapshot (seam unique : seuils 24/48 h portés par
+    // domain/fuel-prices/freshness, TRE-5).
+    freshnessScore: computeFreshnessScore(
+      (input.now.getTime() - snapshots[snapshots.length - 1]!.day.getTime()) / 3_600_000
+    )
   }
 }
 
@@ -137,20 +138,6 @@ function decayWeightedDelta(snapshots: TrendInput['snapshots']): number {
     totalWeight += weight
   }
   return totalWeight === 0 ? 0 : weightedSum / totalWeight
-}
-
-// Règles 24 h / 48 h (TRE-5) : score décroissant 0..1 — 1 jusqu'à 24 h, puis
-// linéaire jusqu'à 0 à 48 h, 0 au-delà. Cohérent avec computeFreshness.
-function computeFreshnessScore(
-  snapshots: TrendInput['snapshots'],
-  now: Date
-): number {
-  if (snapshots.length === 0) return 0
-  const latest = snapshots[snapshots.length - 1] as (typeof snapshots)[number]
-  const ageMs = now.getTime() - latest.day.getTime()
-  if (ageMs <= FRESH_LIMIT_MS) return 1
-  if (ageMs >= OBSOLETE_LIMIT_MS) return 0
-  return 1 - (ageMs - FRESH_LIMIT_MS) / (OBSOLETE_LIMIT_MS - FRESH_LIMIT_MS)
 }
 
 // Point de l'historique le plus proche, à une date <= cible (fenêtre J−1/J−7).
