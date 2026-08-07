@@ -32,12 +32,15 @@
 // L'upsert des colonnes d'enrichissement conserve la valeur PRÉCÉDENTE en base
 // quand la résolution ne donne rien pour cette station (aucune écriture
 // partielle : on ne remplace jamais un nom réel par null).
-import { and, eq, lt, sql } from 'drizzle-orm'
+import { and, eq, lt } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import type { FuelPriceProvider, StationMetadataProvider } from '../providers/types'
 import { FUEL_TYPES, type FuelType, type StationPrice } from '../../domain/fuel-prices/types'
 import { deriveBrandFromAddress } from '../../domain/stations/deriveBrand'
-import { lastSync, priceHistory, prices, stations } from '../db/schema'
+import { lastSync, prices } from '../db/schema'
+import { createStationsRepository, type StationUpsertRow } from '../repositories/stations'
+import { createPricesRepository, type PriceRow } from '../repositories/prices'
+import { createPriceHistoryRepository, type PriceHistoryRow } from '../repositories/priceHistory'
 
 // Centre « large France » (métropole) pour la synchronisation complète.
 export const FRANCE_CENTER = { lat: 46.5, lon: 2.5 }
@@ -237,17 +240,22 @@ export function createSyncPricesJob(options: SyncPricesOptions) {
     let enriched = 0
 
     // 5a. Upsert des stations (dédupliquées par id, tous carburants confondus),
-    //     avec les colonnes d'enrichissement. Aucune écriture partielle : les
-    //     champs d'identité non résolus ce tick (`undefined`) conservent la
-    //     valeur précédente en base (on ne remplace jamais un nom réel par
-    //     null). Si la station n'existe pas encore, le nom par défaut = id et
-    //     brand = null (invariant CONTEXT.md).
+    //     avec les colonnes d'enrichissement, en un seul INSERT multi-VALUES.
+    //     Aucune écriture partielle : les champs d'identité non résolus ce tick
+    //     (`undefined`) conservent la valeur précédente en base (on ne remplace
+    //     jamais un nom réel par null). Si la station n'existe pas encore, le
+    //     nom par défaut = id et brand = null (invariant CONTEXT.md).
+    const stationsRepo = createStationsRepository(tx)
+    const pricesRepo = createPricesRepository(tx)
+    const historyRepo = createPriceHistoryRepository(tx)
+
     const stationById = new Map<string, StationPrice>()
     for (const list of byFuel.values()) {
       for (const s of list) {
         if (!stationById.has(s.id)) stationById.set(s.id, s)
       }
     }
+    const stationRows: StationUpsertRow[] = []
     for (const s of stationById.values()) {
       const identity = identities.get(s.id) ?? {
         name: s.id,
@@ -256,97 +264,61 @@ export function createSyncPricesJob(options: SyncPricesOptions) {
         logoUrl: null
       }
       // « Identité par défaut » : aucune résolution réelle ce tick (nom = id,
-      // brand = null). Dans ce cas l'upsert CONSERVE la valeur précédente en
+      // brand = null). Le repo en lot CONSERVE alors la valeur précédente en
       // base — on ne remplace jamais un nom/enseigne réels par null (aucune
       // écriture partielle, invariant CONTEXT.md). Un vrai enrichissement
       // (OSM ou dérivation adresse) écrase toujours les quatre colonnes.
-      const isDefault = identity.name === s.id && identity.brand === null
-      tx.insert(stations)
-        .values({
-          id: s.id,
-          name: identity.name,
-          brand: identity.brand,
-          brandWikidataId: identity.brandWikidataId,
-          logoUrl: identity.logoUrl,
-          address: s.address,
-          city: s.city,
-          postalCode: s.postalCode,
-          latitude: s.position.lat,
-          longitude: s.position.lon,
-          departmentCode: null,
-          regionCode: null,
-          closed: false,
-          syncedAt
-        })
-        .onConflictDoUpdate({
-          target: stations.id,
-          set: {
-            name: isDefault ? sql`name` : identity.name,
-            brand: isDefault ? sql`brand` : identity.brand,
-            brandWikidataId: isDefault
-              ? sql`brand_wikidata_id`
-              : (identity.brandWikidataId ?? sql`brand_wikidata_id`),
-            logoUrl: isDefault
-              ? sql`logo_url`
-              : (identity.logoUrl ?? sql`logo_url`),
-            address: s.address,
-            city: s.city,
-            postalCode: s.postalCode,
-            latitude: s.position.lat,
-            longitude: s.position.lon,
-            departmentCode: null,
-            regionCode: null,
-            closed: false,
-            syncedAt
-          }
-        })
-        .run()
-      stationsSynced++
+      stationRows.push({
+        id: s.id,
+        name: identity.name,
+        brand: identity.brand,
+        brandWikidataId: identity.brandWikidataId,
+        logoUrl: identity.logoUrl,
+        address: s.address,
+        city: s.city,
+        postalCode: s.postalCode,
+        latitude: s.position.lat,
+        longitude: s.position.lon,
+        departmentCode: null,
+        regionCode: null,
+        closed: false,
+        syncedAt
+      })
       // Compteur d'enrichissement réel : un nom autre que l'id ou une enseigne.
       if (identity.name !== s.id || identity.brand !== null) enriched++
     }
+    stationsRepo.upsertMany(tx, stationRows)
+    stationsSynced += stationRows.length
 
-    // 5b. Upsert des prix + append quotidien de l'historique (ADR-0004).
+    // 5b. Upsert des prix + append quotidien de l'historique (ADR-0004), en
+    //     un seul INSERT multi-VALUES par table.
+    const priceRows: PriceRow[] = []
+    const historyRows: PriceHistoryRow[] = []
     for (const [fuel, list] of byFuel) {
       for (const s of list) {
-        tx.insert(prices)
-          .values({
-            stationId: s.id,
-            fuel,
-            price: s.price,
-            updatedAt: s.updatedAt,
-            rupture: false,
-            syncedAt
-          })
-          .onConflictDoUpdate({
-            target: [prices.stationId, prices.fuel],
-            set: {
-              price: s.price,
-              updatedAt: s.updatedAt,
-              rupture: false,
-              syncedAt
-            }
-          })
-          .run()
-        pricesSynced++
+        priceRows.push({
+          stationId: s.id,
+          fuel,
+          price: s.price,
+          updatedAt: s.updatedAt,
+          rupture: false,
+          syncedAt
+        })
 
         // Snapshot quotidien : un seul par (station, fuel, jour) — upsert.
-        tx.insert(priceHistory)
-          .values({
-            stationId: s.id,
-            fuel,
-            day,
-            price: s.price,
-            syncedAt
-          })
-          .onConflictDoUpdate({
-            target: [priceHistory.stationId, priceHistory.fuel, priceHistory.day],
-            set: { price: s.price, syncedAt }
-          })
-          .run()
-        historyAppended++
+        historyRows.push({
+          stationId: s.id,
+          fuel,
+          day,
+          price: s.price,
+          syncedAt
+        })
       }
     }
+    pricesRepo.upsertMany(tx, priceRows)
+    pricesSynced += priceRows.length
+    historyRepo.upsertMany(tx, historyRows)
+    historyAppended += historyRows.length
 
     // 5c. Purge 48 h : seulement pour les carburants réellement synchronisés
     //     ce tick (un carburant en échec garde ses données, intouchées).

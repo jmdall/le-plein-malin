@@ -2,9 +2,9 @@
 // (server/repositories/*) sur SQLite temporaire. Aucune règle métier testée ici.
 import { describe, expect, it, afterEach } from 'vitest'
 import { createTestDb } from '../helpers/db'
-import { createStationsRepository } from '../../server/repositories/stations'
-import { createPricesRepository } from '../../server/repositories/prices'
-import { createPriceHistoryRepository } from '../../server/repositories/priceHistory'
+import { createStationsRepository, type StationUpsertRow } from '../../server/repositories/stations'
+import { createPricesRepository, type PriceRow } from '../../server/repositories/prices'
+import { createPriceHistoryRepository, type PriceHistoryRow } from '../../server/repositories/priceHistory'
 import { createVehicleProfileRepository } from '../../server/repositories/vehicleProfile'
 import { createFavoritesRepository } from '../../server/repositories/favorites'
 
@@ -211,7 +211,7 @@ describe('repositories (intégration SQLite)', () => {
       closed: false,
       syncedAt: new Date('2026-08-03T10:00:00Z')
     }
-    await stationsRepo.upsertMany([close, far, closed, ruptured])
+    await stationsRepo.upsertMany(db, [close, far, closed, ruptured])
 
     const now = new Date('2026-08-03T10:00:00Z')
     for (const s of [close, far, closed, ruptured]) {
@@ -228,6 +228,166 @@ describe('repositories (intégration SQLite)', () => {
     const result = await pricesRepo.findByFuelInRadius('Gazole', 48.832, 2.356, 5)
     expect(result.map((r) => r.id)).toEqual(['10'])
     expect(result[0]!.distanceKm).toBeLessThan(0.1)
+  })
+
+  it('stations.upsertMany : insère un lot puis met à jour en lot (onConflictDoUpdate)', async () => {
+    const { db } = setup()
+    const stationsRepo = createStationsRepository(db)
+    const base = (id: string): StationUpsertRow => ({
+      id,
+      name: `Station ${id}`,
+      brand: null,
+      address: `${id} rue`,
+      city: 'Paris',
+      postalCode: '75001',
+      latitude: 48.86,
+      longitude: 2.34,
+      departmentCode: null,
+      regionCode: null,
+      closed: false,
+      syncedAt: new Date('2026-08-03T10:00:00Z')
+    })
+    const batch = [base('S1'), base('S2'), base('S3')]
+
+    await stationsRepo.upsertMany(db, batch)
+    expect(await stationsRepo.count()).toBe(3)
+    for (const id of ['S1', 'S2', 'S3']) {
+      expect((await stationsRepo.findById(id))?.name).toBe(`Station ${id}`)
+    }
+
+    // Mise à jour en lot : renomme S1 et S3, S2 reste inchangé.
+    await stationsRepo.upsertMany(db, [
+      { ...base('S1'), name: 'S1 renommée' },
+      { ...base('S2') },
+      { ...base('S3'), name: 'S3 renommée' }
+    ])
+    expect(await stationsRepo.count()).toBe(3)
+    expect((await stationsRepo.findById('S1'))?.name).toBe('S1 renommée')
+    expect((await stationsRepo.findById('S2'))?.name).toBe('Station S2')
+    expect((await stationsRepo.findById('S3'))?.name).toBe('S3 renommée')
+
+    // Lot vide : aucune écriture, aucun crash.
+    await stationsRepo.upsertMany(db, [])
+    expect(await stationsRepo.count()).toBe(3)
+  })
+
+  it('stations.upsertMany : lot mixte ne conserve pas un nom réel quand un vrai nom est fourni', async () => {
+    const { db } = setup()
+    const stationsRepo = createStationsRepository(db)
+    const base = (id: string): StationUpsertRow => ({
+      id,
+      name: `Station ${id}`,
+      brand: null,
+      address: `${id} rue`,
+      city: 'Paris',
+      postalCode: '75001',
+      latitude: 48.86,
+      longitude: 2.34,
+      departmentCode: null,
+      regionCode: null,
+      closed: false,
+      syncedAt: new Date('2026-08-03T10:00:00Z')
+    })
+
+    // Insertion en lot de 2 stations.
+    await stationsRepo.upsertMany(db, [base('T1'), base('T2')])
+
+    // Lot de mise à jour : T1 reçoit un vrai nom, T2 reste « par défaut » (id).
+    await stationsRepo.upsertMany(db, [
+      { ...base('T1'), name: 'TotalEnergies Lyon', brand: 'TotalEnergies' },
+      { ...base('T2') }
+    ])
+
+    expect((await stationsRepo.findById('T1'))?.name).toBe('TotalEnergies Lyon')
+    expect((await stationsRepo.findById('T1'))?.brand).toBe('TotalEnergies')
+    // T2 n'a pas de vrai nom : le lot ne doit pas écraser son nom avec autre chose.
+    expect((await stationsRepo.findById('T2'))?.name).toBe('Station T2')
+  })
+
+  it('prices.upsertMany : insère un lot puis met à jour en lot (onConflictDoUpdate)', async () => {
+    const { db } = setup()
+    const stationsRepo = createStationsRepository(db)
+    const pricesRepo = createPricesRepository(db)
+    const station = (id: string): StationUpsertRow => ({
+      id,
+      name: `S ${id}`,
+      brand: null,
+      address: `${id} rue`,
+      city: 'Paris',
+      postalCode: '75001',
+      latitude: 48.86,
+      longitude: 2.34,
+      departmentCode: null,
+      regionCode: null,
+      closed: false,
+      syncedAt: new Date('2026-08-03T10:00:00Z')
+    })
+    const price = (stationId: string, price: number): PriceRow => ({
+      stationId,
+      fuel: 'Gazole',
+      price,
+      updatedAt: new Date('2026-08-03T09:00:00Z'),
+      rupture: false,
+      syncedAt: new Date('2026-08-03T10:00:00Z')
+    })
+    await stationsRepo.upsertMany(db, [station('P1'), station('P2'), station('P3')])
+
+    await pricesRepo.upsertMany(db, [price('P1', 1.6), price('P2', 1.7), price('P3', 1.8)])
+    expect(await pricesRepo.count()).toBe(3)
+    expect((await pricesRepo.findByStationAndFuel('P1', 'Gazole'))?.price).toBe(1.6)
+
+    // Mise à jour en lot : 2 prix changent, 1 reste.
+    await pricesRepo.upsertMany(db, [price('P1', 1.55), price('P2', 1.7), price('P3', 1.75)])
+    expect(await pricesRepo.count()).toBe(3)
+    expect((await pricesRepo.findByStationAndFuel('P1', 'Gazole'))?.price).toBe(1.55)
+    expect((await pricesRepo.findByStationAndFuel('P2', 'Gazole'))?.price).toBe(1.7)
+    expect((await pricesRepo.findByStationAndFuel('P3', 'Gazole'))?.price).toBe(1.75)
+
+    await pricesRepo.upsertMany(db, [])
+    expect(await pricesRepo.count()).toBe(3)
+  })
+
+  it('price_history.upsertMany : insère un lot puis met à jour en lot (onConflictDoUpdate)', async () => {
+    const { db } = setup()
+    const stationsRepo = createStationsRepository(db)
+    const historyRepo = createPriceHistoryRepository(db)
+    await stationsRepo.upsert({
+      id: 'H1',
+      name: 'S H1',
+      brand: null,
+      address: '1 rue',
+      city: 'Paris',
+      postalCode: '75001',
+      latitude: 48.86,
+      longitude: 2.34,
+      departmentCode: null,
+      regionCode: null,
+      closed: false,
+      syncedAt: new Date('2026-08-03T10:00:00Z')
+    })
+    const dayPrice = (day: string, price: number): PriceHistoryRow => ({
+      stationId: 'H1',
+      fuel: 'SP98',
+      day,
+      price,
+      syncedAt: new Date(day + 'T10:00:00Z')
+    })
+
+    await historyRepo.upsertMany(db, [dayPrice('2026-08-01', 1.89), dayPrice('2026-08-02', 1.88), dayPrice('2026-08-03', 1.87)])
+    expect(await historyRepo.count()).toBe(3)
+
+    // Mise à jour en lot : le snapshot quotidien du jour 2 est remplacé.
+    await historyRepo.upsertMany(db, [dayPrice('2026-08-02', 1.86), dayPrice('2026-08-03', 1.87)])
+    const history = await historyRepo.findByStationAndFuel('H1', 'SP98')
+    expect(history).toEqual([
+      { day: '2026-08-01', price: 1.89 },
+      { day: '2026-08-02', price: 1.86 },
+      { day: '2026-08-03', price: 1.87 }
+    ])
+    expect(await historyRepo.count()).toBe(3)
+
+    await historyRepo.upsertMany(db, [])
+    expect(await historyRepo.count()).toBe(3)
   })
 
   it('vehicle_profile : seed singleton par défaut (seuil 1 €) + put', async () => {

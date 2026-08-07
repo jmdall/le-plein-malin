@@ -1,8 +1,8 @@
 // server/repositories/priceHistory.ts — Accès price_history (spec §9.3, ADR-0004).
 // Upsert quotidien par (station_id, fuel, day). Sans règle métier.
 import { and, eq, sql } from 'drizzle-orm'
-import type { Db } from '../db/client'
 import { priceHistory } from '../db/schema'
+import type { DbOrTx } from './stations'
 
 export interface PriceHistoryRow {
   stationId: string
@@ -17,7 +17,7 @@ export interface DayPrice {
   price: number
 }
 
-export function createPriceHistoryRepository(db: Db) {
+export function createPriceHistoryRepository(db: DbOrTx) {
   return {
     async upsert(row: PriceHistoryRow): Promise<void> {
       await db
@@ -32,10 +32,19 @@ export function createPriceHistoryRepository(db: Db) {
         })
     },
 
-    async upsertMany(rows: PriceHistoryRow[]): Promise<void> {
-      for (const row of rows) {
-        await this.upsert(row)
-      }
+    async upsertMany(tx: DbOrTx, rows: PriceHistoryRow[]): Promise<void> {
+      if (rows.length === 0) return
+      tx
+        .insert(priceHistory)
+        .values(rows)
+        .onConflictDoUpdate({
+          target: [priceHistory.stationId, priceHistory.fuel, priceHistory.day],
+          set: {
+            price: sql`excluded.price`,
+            syncedAt: sql`excluded.synced_at`
+          }
+        })
+        .run()
     },
 
     // Historique quotidien (J−0 → J−n) d'une station/carburant, trié par jour croissant.

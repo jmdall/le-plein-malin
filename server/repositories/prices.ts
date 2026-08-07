@@ -1,7 +1,7 @@
 // server/repositories/prices.ts — Accès prices (spec §9.2). Sans règle métier.
 import { and, eq, sql } from 'drizzle-orm'
-import type { Db } from '../db/client'
 import { prices, stations } from '../db/schema'
+import type { DbOrTx } from './stations'
 
 export interface PriceRow {
   stationId: string
@@ -46,7 +46,7 @@ function haversineSql(lat: number, lon: number): unknown {
   )`
 }
 
-export function createPricesRepository(db: Db) {
+export function createPricesRepository(db: DbOrTx) {
   return {
     async upsert(row: PriceRow): Promise<void> {
       await db
@@ -63,10 +63,21 @@ export function createPricesRepository(db: Db) {
         })
     },
 
-    async upsertMany(rows: PriceRow[]): Promise<void> {
-      for (const row of rows) {
-        await this.upsert(row)
-      }
+    async upsertMany(tx: DbOrTx, rows: PriceRow[]): Promise<void> {
+      if (rows.length === 0) return
+      tx
+        .insert(prices)
+        .values(rows)
+        .onConflictDoUpdate({
+          target: [prices.stationId, prices.fuel],
+          set: {
+            price: sql`excluded.price`,
+            updatedAt: sql`excluded.updated_at`,
+            rupture: sql`excluded.rupture`,
+            syncedAt: sql`excluded.synced_at`
+          }
+        })
+        .run()
     },
 
     async findByStation(stationId: string): Promise<PriceRow[]> {
