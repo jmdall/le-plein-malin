@@ -8,9 +8,8 @@
 // liste et StationMap lit les mêmes données depuis le parent — un seul fetch
 // par recherche, aucune divergence (ticket 012).
 import { ref, type Ref } from 'vue'
-import { fuelToApi } from '../utils/fuel'
-import { apiUrl } from '../utils/api'
-import type { StationsRequest, StationsQueryResult } from '../utils/stations'
+import { apiFetch } from '../utils/api'
+import { buildSearchParams, type StationsRequest, type StationsQueryResult } from '../utils/stations'
 
 export type StationsStatus = 'idle' | 'loading' | 'success' | 'error'
 
@@ -61,77 +60,29 @@ export function useStations(): UseStationsReturn {
       searchToken: String(myToken)
     }
 
-    const params = new URLSearchParams()
-    if (request.lat !== undefined && request.lon !== undefined) {
-      params.set('lat', String(request.lat))
-      params.set('lon', String(request.lon))
-    } else if (request.postalCode) {
-      params.set('postalCode', request.postalCode)
-    } else if (request.city) {
-      params.set('city', request.city)
-    } else if (request.q) {
-      params.set('q', request.q)
-    }
-    params.set('radius', String(request.radius))
-    params.set('fuel', fuelToApi(request.fuel))
+    const result = await apiFetch<StationsQueryResult>(
+      '/api/stations',
+      buildSearchParams(request),
+      {
+        isStale: () => myToken !== token,
+        validate: (data) => Array.isArray(data.stations)
+      }
+    )
 
-    const url = apiUrl(`/api/stations?${params.toString()}`)
-
-    let response: Response
-    try {
-      response = await fetch(url)
-    } catch {
+    if (result.ok) {
       if (myToken !== token) return null
-      state.value = {
-        ...state.value,
-        status: 'error',
-        error: 'Impossible de joindre le serveur. Vérifiez votre connexion.',
-        startedAt: Date.now()
-      }
-      return null
+      state.value = { ...EMPTY, status: 'success', data: result.data, startedAt: Date.now(), searchToken: String(myToken) }
+      return result.data
     }
 
-    if (!response.ok) {
-      let message = 'Le serveur a renvoyé une erreur.'
-      try {
-        const body = (await response.json()) as { error?: { message?: string } }
-        if (body.error?.message) {
-          message = body.error.message
-        }
-      } catch {
-        // corps non JSON : on garde le message générique
-      }
-      if (myToken !== token) return null
-      state.value = {
-        ...state.value,
-        status: 'error',
-        error: message,
-        startedAt: Date.now()
-      }
-      return null
+    if (result.error === 'stale' || myToken !== token) return null
+    state.value = {
+      ...state.value,
+      status: 'error',
+      error: result.error,
+      startedAt: Date.now()
     }
-
-    let data: StationsQueryResult
-    try {
-      const body = (await response.json()) as { stations?: unknown } | StationsQueryResult
-      if (!body || !Array.isArray((body as StationsQueryResult).stations)) {
-        throw new Error('reponse invalide')
-      }
-      data = body as StationsQueryResult
-    } catch {
-      if (myToken !== token) return null
-      state.value = {
-        ...state.value,
-        status: 'error',
-        error: 'Le serveur a renvoyé une réponse invalide.',
-        startedAt: Date.now()
-      }
-      return null
-    }
-
-    if (myToken !== token) return null
-    state.value = { ...EMPTY, status: 'success', data, startedAt: Date.now(), searchToken: String(myToken) }
-    return data
+    return null
   }
 
   function _reset() {

@@ -4,6 +4,8 @@
 // que le tri par défaut (économie nette décroissante, favoris en tête,
 // référence et non rentables en bas — STA-2/STA-4) et les libellés de
 // fraîcheur accessibles (STA-3, FRE-1, NFR-ACC-4).
+import type { FuelValue } from './fuel'
+import { fuelToApi } from './fuel'
 import type { RecommendationRequest } from './recommendation'
 
 export interface ListedStation {
@@ -54,6 +56,35 @@ export interface StationsQueryResult {
 }
 
 export type StationsRequest = Omit<RecommendationRequest, 'vehicleProfile'>
+
+// ——— Paramètres de recherche communs (ticket 029) ———
+// Priorité : lat/lon SI les deux présents → sinon postalCode → sinon city →
+// sinon q. Puis radius et fuel (via fuelToApi). Consommé par les composables
+// useStations et useFuelRecommendation — aucune construction dupliquée.
+export function buildSearchParams(request: {
+  lat?: number
+  lon?: number
+  q?: string
+  city?: string
+  postalCode?: string
+  radius: number
+  fuel: FuelValue
+}): URLSearchParams {
+  const params = new URLSearchParams()
+  if (request.lat !== undefined && request.lon !== undefined) {
+    params.set('lat', String(request.lat))
+    params.set('lon', String(request.lon))
+  } else if (request.postalCode) {
+    params.set('postalCode', request.postalCode)
+  } else if (request.city) {
+    params.set('city', request.city)
+  } else if (request.q) {
+    params.set('q', request.q)
+  }
+  params.set('radius', String(request.radius))
+  params.set('fuel', fuelToApi(request.fuel))
+  return params
+}
 
 // ——— Libellés de fraîcheur (STA-3). Texte toujours présent : la couleur
 // n'est jamais le seul vecteur d'information (NFR-ACC-4). ———

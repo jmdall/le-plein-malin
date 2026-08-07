@@ -34,3 +34,72 @@ export function apiUrl(path: string): string {
   const cleanPath = path.startsWith('/') ? path : `/${path}`
   return base ? `${base}${cleanPath}` : cleanPath
 }
+
+// ——— Transport HTTP unique du client (ticket 029) ———
+// apiFetch encapsule fetch + erreur normalisée (messages français) + parsing
+// JSON + garde anti-race. Les composables (useStations, useFuelRecommendation)
+// ne font plus de transport : ils ne gardent que leur machine d'état.
+//
+// Messages d'erreur EXACTS (testés via les composables) :
+// - réseau : « Impossible de joindre le serveur. Vérifiez votre connexion. »
+// - non-ok sans message : « Le serveur a renvoyé une erreur. »
+// - non-ok avec body.error.message : ce message
+// - JSON invalide / forme non valide : « Le serveur a renvoyé une réponse invalide. »
+//
+// `isStale` : vérifié après chaque await. Si la requête n'est plus la plus
+// récente, apiFetch retourne { ok: false, error: 'stale' } — le composable
+// interprète ce signal comme « ignore ce résultat » (pas d'écriture d'état).
+export type ApiFetchResult<T> = { ok: true; data: T } | { ok: false; error: string }
+
+export interface ApiFetchOptions<T> {
+  isStale?: () => boolean
+  /** Validation de la forme de la réponse (ex. array stations). Échec → réponse invalide. */
+  validate?: (data: T) => boolean
+}
+
+export async function apiFetch<T>(
+  path: string,
+  params: URLSearchParams,
+  options?: ApiFetchOptions<T>
+): Promise<ApiFetchResult<T>> {
+  const { isStale, validate } = options ?? {}
+  const url = apiUrl(`${path}?${params.toString()}`)
+
+  let response: Response
+  try {
+    response = await fetch(url)
+  } catch {
+    if (isStale?.()) return { ok: false, error: 'stale' }
+    return { ok: false, error: 'Impossible de joindre le serveur. Vérifiez votre connexion.' }
+  }
+
+  if (!response.ok) {
+    let message = 'Le serveur a renvoyé une erreur.'
+    try {
+      const body = (await response.json()) as { error?: { message?: string } }
+      if (body.error?.message) {
+        message = body.error.message
+      }
+    } catch {
+      // corps non JSON : on garde le message générique
+    }
+    if (isStale?.()) return { ok: false, error: 'stale' }
+    return { ok: false, error: message }
+  }
+
+  let data: T
+  try {
+    data = (await response.json()) as T
+  } catch {
+    if (isStale?.()) return { ok: false, error: 'stale' }
+    return { ok: false, error: 'Le serveur a renvoyé une réponse invalide.' }
+  }
+
+  if (validate && !validate(data)) {
+    if (isStale?.()) return { ok: false, error: 'stale' }
+    return { ok: false, error: 'Le serveur a renvoyé une réponse invalide.' }
+  }
+
+  if (isStale?.()) return { ok: false, error: 'stale' }
+  return { ok: true, data }
+}
