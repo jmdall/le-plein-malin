@@ -5,7 +5,7 @@
 // SYNC_INTERVAL_HOURS (défaut 2).
 import { defineNitroPlugin } from 'nitropack/runtime'
 import { createDb } from '../db/client'
-import { createSyncProviderChain } from '../providers/syncChain'
+import { createProviderChain } from '../providers/providerChain'
 import { createOsmMetadataProvider } from '../providers/osmMetadata'
 import { scheduleSyncPrices } from '../jobs/schedule'
 
@@ -14,10 +14,11 @@ export default defineNitroPlugin((nitroApp) => {
   // ici on prépare la connexion partagée du job).
   const { db } = createDb()
 
-  // Chaîne de repli DÉDIÉE sync (export JSON complet prioritaire) : l'API
-  // records paginée est plafonnée à 3000 records/carburant, insuffisante pour
-  // la France entière (server/providers/syncChain.ts).
-  const provider = createSyncProviderChain(db)
+  // Chaîne de repli unique (ticket 028) en mode « France entière » : l'export
+  // JSON complet est prioritaire, car l'API records paginée est plafonnée à
+  // 3000 records/carburant, insuffisante pour la France entière (~73 493
+  // records) — rayon large 900 km (server/providers/providerChain.ts).
+  const provider = createProviderChain(db, 900)
 
   // Enrichissement d'identité (ticket 019) : le job périodique applique OSM →
   // dérivation adresse → nom par défaut à chaque station synchronisée.

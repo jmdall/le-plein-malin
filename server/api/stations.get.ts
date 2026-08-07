@@ -5,11 +5,7 @@
 // ni loggée (LOC-4, NFR-SEC-4).
 import { baseLocationSchema } from '../lib/validation'
 import { createDb } from '../db/client'
-import { createFallbackChain } from '../providers'
-import { createOpendatasoftProvider } from '../providers/opendatasoft'
-import { createJsonExportProvider } from '../providers/jsonExport'
-import { createRoulezEcoProvider } from '../providers/roulezoeco'
-import { createCacheProvider } from '../providers/cacheProvider'
+import { createProviderChain } from '../providers/providerChain'
 import { createGeocodeProvider } from '../lib/geocode'
 import { createApiError, isApiError } from '../lib/api-errors'
 import { resolveCenter } from '../lib/station-mapping'
@@ -28,17 +24,8 @@ export default defineEventHandler(async (event) => {
     }
 
     // 2. Chaîne de repli des fournisseurs (ADR-0003) sur la base locale.
-    const provider = createFallbackChain({
-      providers: [
-        createOpendatasoftProvider(),
-        createJsonExportProvider(),
-        createRoulezEcoProvider(),
-        createCacheProvider(db)
-      ],
-      onError: (name, error) => {
-        console.error(`[stations] provider ${name} indisponible :`, error)
-      }
-    })
+    //    Rayon ≤ 100 → records d'abord ; France entière → export d'abord.
+    const provider = createProviderChain(db, parsed.data.radius)
 
     // 3. Résolution du centre (lat/lon, ou géocodage ville/CP avec cache).
     const geocode = createGeocodeProvider(db)

@@ -11,11 +11,8 @@
 // n'upsert que ce que le provider a réellement renvoyé).
 import { z } from 'zod'
 import { createDb } from '../db/client'
-import { createFallbackChain, createOsmMetadataProvider } from '../providers'
-import { createOpendatasoftProvider } from '../providers/opendatasoft'
-import { createJsonExportProvider } from '../providers/jsonExport'
-import { createRoulezEcoProvider } from '../providers/roulezoeco'
-import { createCacheProvider } from '../providers/cacheProvider'
+import { createOsmMetadataProvider } from '../providers'
+import { createProviderChain } from '../providers/providerChain'
 import { createSyncPricesJob } from '../jobs/syncPrices'
 import { latSchema, lonSchema } from '../lib/validation'
 
@@ -60,25 +57,9 @@ export default defineEventHandler(async (event) => {
 
     // Rayon local (≤ 100 km) : l'API records paginée est rapide et précise.
     // France entière : l'export JSON complet est prioritaire (la pagination
-    // est plafonnée à 3000 records/carburant).
-    const provider = createFallbackChain({
-      providers: radiusKm <= 100
-        ? [
-            createOpendatasoftProvider(),
-            createJsonExportProvider(),
-            createRoulezEcoProvider(),
-            createCacheProvider(db)
-          ]
-        : [
-            createJsonExportProvider(),
-            createOpendatasoftProvider(),
-            createRoulezEcoProvider(),
-            createCacheProvider(db)
-          ],
-      onError: (name, error) => {
-        console.error(`[sync-manual] provider ${name} indisponible :`, error)
-      }
-    })
+    // est plafonnée à 3000 records/carburant). L'ordre est décidé par la
+    // chaîne unique (ticket 028).
+    const provider = createProviderChain(db, radiusKm)
 
     // Même enrichissement que le job périodique (ticket 019) : OSM d'abord,
     // repli dérivation adresse, sinon nom par défaut = id (aucun nom fabriqué).
