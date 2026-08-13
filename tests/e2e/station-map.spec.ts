@@ -398,6 +398,16 @@ test('déplacer la carte relance la recherche (recommandation + stations) autour
     (u) => u.includes('/api/recommendation') && u.includes('lat=')
   )
   expect(recoWithLatLon.length).toBeGreaterThanOrEqual(1)
+
+  // Ticket 032 : le centre d'une carte pansée n'est pas la position de
+  // l'utilisateur. Les deux endpoints doivent recevoir positionSource=place,
+  // pour que la recommandation garde son hypothèse de détour.
+  for (const path of ['/api/recommendation', '/api/stations']) {
+    const panned = apiRequests.filter((u) => u.includes(path) && u.includes('lat='))
+    expect(panned.length, path).toBeGreaterThanOrEqual(1)
+    const params = new URL(panned[panned.length - 1]!).searchParams
+    expect(params.get('positionSource'), path).toBe('place')
+  }
   const parsed = new URL(recoWithLatLon.at(-1)!)
   expect(Number.isFinite(Number(parsed.searchParams.get('lat')))).toBe(true)
   expect(Number.isFinite(Number(parsed.searchParams.get('lon')))).toBe(true)

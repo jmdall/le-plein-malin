@@ -120,6 +120,12 @@ async function onMapRecenter(center: { lat: number; lon: number }) {
     {
       lat: center.lat,
       lon: center.lon,
+      // Ticket 032 : le centre de la carte n'est PAS la position de
+      // l'utilisateur — il explore une zone où il n'est pas. Sans cette
+      // provenance, le serveur conclut à une géolocalisation et la
+      // recommandation perd son hypothèse de détour en ligne droite (§13 #16),
+      // donc affiche moins de réserves que la donnée n'en autorise.
+      positionSource: 'place',
       radius: prefs.radius.value,
       fuel: prefs.fuel.value
     },

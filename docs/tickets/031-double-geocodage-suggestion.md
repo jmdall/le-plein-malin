@@ -142,12 +142,7 @@ deux gardes, aucune duplication :
   terrestres ;
 - `resolveSearchInput` : « peut-on chercher ici ? » → bornes API.
 
-## Reste à faire (hors périmètre, à trancher)
+## Suite
 
-**Le déplacement de carte a le même défaut que le point 1.** `onMapRecenter`
-envoie le centre de la carte en `lat`/`lon` sans `positionSource`, donc en
-`device` : une recommandation obtenue en déplaçant la carte est présentée comme
-géolocalisée alors que l'utilisateur n'est pas au centre de la carte. Le défaut
-**préexiste** à ce ticket. Le vocabulaire pour le corriger existe désormais —
-passer `positionSource: 'place'` dans `onMapRecenter` — mais cela change le
-niveau de confiance affiché sur un parcours existant : décision produit.
+Le déplacement de carte avait le même défaut de provenance que le point 1
+(défaut préexistant à ce ticket). Tranché et corrigé dans le **ticket 032**.
