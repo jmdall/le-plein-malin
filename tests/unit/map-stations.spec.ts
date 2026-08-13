@@ -98,11 +98,42 @@ describe('mapBoundsSchema (ticket 037)', () => {
     ).toBe(false)
   })
 
-  it('rejette une emprise hors France (bornes API, spec §14 #14)', () => {
-    // La Réunion : latitude négative, hors bornes métropolitaines.
+  // ——— Ticket 041 ———
+  // Une EMPRISE est une fenêtre, pas un centre de recherche. Dézoomer sur la
+  // France donne forcément une fenêtre plus large que la France (à partir du
+  // zoom 7 : 22° de longitude contre 15,3° pour le territoire). La refuser
+  // rendait l'exploration impossible aux zooms bas — exactement la
+  // fonctionnalité du ticket 039.
+  it('accepte une emprise plus large que la France (dézoom)', () => {
+    // Emprise typique du zoom 7 : débordement à l'ouest sur l'Atlantique.
+    expect(
+      mapBoundsSchema.safeParse({ swLat: 42, swLon: -9.8, neLat: 51, neLon: 12.7 }).success
+    ).toBe(true)
+    // Zoom 6 : l'Europe de l'ouest.
+    expect(
+      mapBoundsSchema.safeParse({ swLat: 36, swLon: -20, neLat: 57, neLon: 25 }).success
+    ).toBe(true)
+  })
+
+  it('accepte une emprise entièrement hors de France (l’utilisateur a pané ailleurs)', () => {
     expect(
       mapBoundsSchema.safeParse({ swLat: -21.4, swLon: 55.2, neLat: -20.8, neLon: 55.8 }).success
-    ).toBe(false)
+    ).toBe(true)
+  })
+
+  it('rejette une emprise hors des bornes terrestres', () => {
+    expect(mapBoundsSchema.safeParse({ swLat: -91, swLon: 2, neLat: 48, neLon: 3 }).success).toBe(
+      false
+    )
+    expect(mapBoundsSchema.safeParse({ swLat: 42, swLon: 2, neLat: 91, neLon: 3 }).success).toBe(
+      false
+    )
+    expect(mapBoundsSchema.safeParse({ swLat: 42, swLon: -181, neLat: 48, neLon: 3 }).success).toBe(
+      false
+    )
+    expect(mapBoundsSchema.safeParse({ swLat: 42, swLon: 2, neLat: 48, neLon: 181 }).success).toBe(
+      false
+    )
   })
 
   it('rejette une emprise incomplète ou non numérique', () => {
@@ -334,6 +365,64 @@ describe('buildMapStationsResponse (ticket 037)', () => {
       })
       expect(res.bounds).toEqual(IDF)
       expect(res.fuel).toBe('SP98')
+    } finally {
+      h.close()
+    }
+  })
+
+  // ——— Ticket 041 : l'emprise est intersectée avec le territoire couvert ———
+  it('une emprise plus large que la France renvoie les stations françaises', async () => {
+    const h = createTestDb()
+    try {
+      await seed(h.db, [
+        { id: 'paris', lat: 48.8566, lon: 2.3522, price: 1.8 },
+        { id: 'brest', lat: 48.39, lon: -4.48, price: 1.75 }
+      ])
+      // Emprise du zoom 6 : très au-delà des bornes du territoire.
+      const res = await buildMapStationsResponse({
+        db: h.db,
+        bounds: { swLat: 36, swLon: -20, neLat: 57, neLon: 25 },
+        fuel: 'Gazole',
+        now: () => NOW
+      })
+      expect(res.stations.map((s) => s.id).sort()).toEqual(['brest', 'paris'])
+    } finally {
+      h.close()
+    }
+  })
+
+  it('une emprise entièrement hors du territoire : liste vide, aucune erreur', async () => {
+    const h = createTestDb()
+    try {
+      await seed(h.db, [{ id: 'paris', lat: 48.8566, lon: 2.3522, price: 1.8 }])
+      // L'Atlantique, très à l'ouest du territoire couvert.
+      const res = await buildMapStationsResponse({
+        db: h.db,
+        bounds: { swLat: 42, swLon: -40, neLat: 48, neLon: -20 },
+        fuel: 'Gazole',
+        now: () => NOW
+      })
+      expect(res.stations).toEqual([])
+      expect(res.truncated).toBe(false)
+    } finally {
+      h.close()
+    }
+  })
+
+  it('renvoie l’emprise DEMANDÉE, pas l’emprise intersectée', async () => {
+    const h = createTestDb()
+    try {
+      await seed(h.db, [{ id: 'paris', lat: 48.8566, lon: 2.3522, price: 1.8 }])
+      const asked = { swLat: 36, swLon: -20, neLat: 57, neLon: 25 }
+      const res = await buildMapStationsResponse({
+        db: h.db,
+        bounds: asked,
+        fuel: 'Gazole',
+        now: () => NOW
+      })
+      // Le client raisonne sur ce qu'il a demandé (couverture des zones déjà
+      // chargées) : lui renvoyer une emprise rognée le ferait recharger sans fin.
+      expect(res.bounds).toEqual(asked)
     } finally {
       h.close()
     }

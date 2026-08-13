@@ -536,6 +536,9 @@ test('le cluster affiche « dès » + le meilleur prix frais du groupe', async (
 // aucun appel.
 test('les marqueurs d’exploration se cumulent et ne disparaissent pas au pan', async ({ page }) => {
   const mapCalls: string[] = []
+  // Ticket 041 : toute emprise refusée est enregistrée. Dézoomer produit une
+  // fenêtre plus large que la France, ce qui ne doit JAMAIS être un 400.
+  const mapErrors: string[] = []
 
   // Endpoint d'emprise : renvoie des stations DANS l'emprise demandée, pour que
   // dézoomer en découvre de nouvelles sans faire disparaître les précédentes.
@@ -547,6 +550,11 @@ test('les marqueurs d’exploration se cumulent et ne disparaissent pas au pan',
     const swLon = Number(p.get('swLon'))
     const neLat = Number(p.get('neLat'))
     const neLon = Number(p.get('neLon'))
+    // Le mock applique les MÊMES bornes que le schéma serveur (terrestres) :
+    // si le client envoyait une emprise invalide, on le verrait ici.
+    if (swLat < -90 || neLat > 90 || swLon < -180 || neLon > 180 || swLat >= neLat || swLon >= neLon) {
+      mapErrors.push(`${swLat},${swLon} → ${neLat},${neLon}`)
+    }
     // Une grille de 5×5 stations réparties dans l'emprise : plus l'emprise est
     // large, plus les stations sont espacées — donc de nouveaux ids apparaissent.
     const stations = []
@@ -623,6 +631,18 @@ test('les marqueurs d’exploration se cumulent et ne disparaissent pas au pan',
   await page.waitForTimeout(600)
   await page.mouse.wheel(0, 400)
   await expect.poll(() => mapCalls.length, { timeout: 15_000 }).toBeGreaterThan(callsBeforeZoom)
+
+  // Ticket 041 : continuer jusqu'aux zooms BAS, là où l'emprise dépasse le
+  // territoire (dès le zoom 7 : ~22° de longitude contre 15,3° pour la France).
+  // C'est exactement le cas qui renvoyait un 400 « lon hors bornes » — la
+  // première version de ce test s'arrêtait au zoom 9 et ne l'atteignait jamais.
+  for (let i = 0; i < 5; i++) {
+    await page.mouse.wheel(0, 400)
+    await page.waitForTimeout(400)
+  }
+  await page.waitForTimeout(1200)
+  // Aucune requête d'emprise ne doit avoir été refusée.
+  expect(mapErrors, `emprises refusées : ${mapErrors.join(', ')}`).toEqual([])
   await expect.poll(counted, { timeout: 15_000 }).toBeGreaterThanOrEqual(before)
 
   // Panner À L'INTÉRIEUR de la zone déjà chargée : aucun nouvel appel.

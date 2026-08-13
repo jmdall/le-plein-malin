@@ -29,6 +29,30 @@ export const lonSchema = z.coerce
   .min(minLon, { error: LON_RANGE })
   .max(maxLon, { error: LON_RANGE })
 
+// ——— Bornes d'une EMPRISE de carte (ticket 041) ———
+// Une emprise est une FENÊTRE, pas un centre de recherche. Les bornes France
+// ci-dessus valent pour un centre (« où l'utilisateur cherche à faire le
+// plein », spec §14 #14) ; les appliquer à un viewport était une erreur de
+// catégorie : dézoomer donne forcément une fenêtre plus large que le
+// territoire (dès le zoom 7 : ~22° de longitude contre 15,3° pour la France),
+// ce qui renvoyait un 400 et rendait l'exploration impossible aux zooms bas.
+//
+// Une fenêtre qui déborde sur l'Atlantique est légitime : la bonne réponse est
+// « les stations du territoire qui s'y trouvent », éventuellement aucune. Le
+// filtre SQL s'en charge naturellement — aucune intersection à calculer, toutes
+// les stations étant de toute façon dans le territoire couvert.
+//
+// Seules les bornes TERRESTRES sont donc imposées ici.
+export const mapLatSchema = z.coerce
+  .number(numError('lat doit être un nombre'))
+  .min(-90, { error: 'latitude hors bornes terrestres (-90..90)' })
+  .max(90, { error: 'latitude hors bornes terrestres (-90..90)' })
+
+export const mapLonSchema = z.coerce
+  .number(numError('lon doit être un nombre'))
+  .min(-180, { error: 'longitude hors bornes terrestres (-180..180)' })
+  .max(180, { error: 'longitude hors bornes terrestres (-180..180)' })
+
 // ——— Provenance des coordonnées (ticket 031) ———
 // `device` : position de l'appareil (géolocalisation) — le détour est mesuré
 // depuis là où l'utilisateur se trouve vraiment.
@@ -209,8 +233,9 @@ export type ResolvedCenter =
 // ——— Query /api/map/stations : emprise (bounding box) ———
 // Question distincte de /api/stations : « qu'y a-t-il dans cette zone ? » et non
 // « où faire le plein ? ». Pas de rayon, pas de station de référence (ticket
-// 037). Les quatre coins passent par latSchema/lonSchema, donc l'emprise est
-// bornée à la France métropolitaine (spec §14 #14).
+// 037). Les quatre coins passent par mapLatSchema/mapLonSchema : bornes
+// TERRESTRES et non françaises — une fenêtre de carte déborde légitimement du
+// territoire dès qu'on dézoome (ticket 041).
 //
 // Plafond de lignes : il ne peut pas se déclencher avec les données actuelles
 // (l'emprise étant bornée à la France, le maximum est la taille du jeu — 9 604
@@ -221,10 +246,10 @@ export const MAP_MAX_STATIONS = 15_000
 export const mapBoundsSchema = z
   .object(
     {
-      swLat: latSchema,
-      swLon: lonSchema,
-      neLat: latSchema,
-      neLon: lonSchema,
+      swLat: mapLatSchema,
+      swLon: mapLonSchema,
+      neLat: mapLatSchema,
+      neLon: mapLonSchema,
       fuel: fuelSchema.optional().default('Gazole')
     },
     { error: (issue) => ({ message: issue.message ?? 'Entrée invalide' }) }
