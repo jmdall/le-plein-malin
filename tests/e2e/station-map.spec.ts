@@ -436,3 +436,62 @@ test('déplacer la carte relance la recherche (recommandation + stations) autour
   // revenue à la valeur du centre initial (pas de flyTo vers l'ancien centre).
   expect(transformAfter).not.toBe(transformInitial)
 })
+
+// ——— Ticket 034 : le cluster porte le meilleur prix frais de son groupe ———
+// Un cluster n'affichait qu'un nombre : il fallait zoomer pour savoir si le
+// groupe valait le détour. Le MINIMUM et non la moyenne — le disque porte déjà
+// le dégradé de sa station la moins chère.
+test('le cluster affiche « dès » + le meilleur prix frais du groupe', async ({ page }) => {
+  // Amas de 4 stations ordinaires : 3 fraîches à des prix distincts, plus une
+  // moins chère mais PÉRIMÉE (48 h) qui ne doit pas fournir le prix affiché.
+  const amas = {
+    ...MOCK_STATIONS,
+    stations: [
+      ...MOCK_STATIONS.stations.filter((s) => !String(s.id).startsWith('st-c')),
+      station({ id: 'st-c1', position: { lat: 48.854, lon: 2.35 }, price: 1.949 }),
+      station({ id: 'st-c2', position: { lat: 48.8585, lon: 2.35 }, price: 1.712 }),
+      station({ id: 'st-c3', position: { lat: 48.863, lon: 2.35 }, price: 1.83 }),
+      station({
+        id: 'st-c4-perime',
+        position: { lat: 48.8555, lon: 2.35 },
+        price: 1.499,
+        freshness: { ageInHours: 48, status: 'stale', score: 0.2 }
+      })
+    ]
+  }
+
+  await page.route('**/api/recommendation*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(MOCK_RECOMMENDATION)
+    })
+  )
+  await page.route('**/api/stations*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(amas) })
+  )
+  await mockLogos(page)
+
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(1500)
+  await page.getByPlaceholder('Rechercher une ville, une adresse…').fill('Paris')
+  await page.getByRole('button', { name: 'Rechercher', exact: true }).click()
+
+  await expect(page.getByTestId('station-map-container')).toHaveClass(/leaflet-container/)
+  await expect(page.locator('.jflp-cluster-marker')).toHaveCount(1)
+  await expect(page.locator('.jflp-cluster')).toHaveText('4')
+
+  // Le prix affiché est le plus bas des FRAIS (1,712), jamais le prix périmé
+  // (1,499) — « dès X € » ne repose jamais sur une donnée de 48 h.
+  const label = page.locator('.jflp-cluster-label')
+  await expect(label).toHaveText('dès 1,712 €')
+  await expect(label).not.toContainText('1,499')
+
+  // NFR-ACC-4 : le prix est aussi porté par le nom accessible, pas seulement
+  // par le visuel et la couleur du disque.
+  await expect(page.locator('.jflp-cluster-marker')).toHaveAttribute(
+    'title',
+    '4 stations regroupées, à partir de 1,712 €/L'
+  )
+})

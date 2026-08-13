@@ -24,7 +24,13 @@
 //     prix, la fraîcheur et la recommandation sont toujours doublés de texte ;
 //   - contrôles de zoom ≥ 44 px (NFR-RES-2) et libellés français.
 import { computed, ref, watch, nextTick, onBeforeUnmount } from 'vue'
-import { buildStationMapView, buildPopupHtml, escapeHtml, MAP_START_ZOOM } from '../utils/stationMap'
+import {
+  buildStationMapView,
+  buildPopupHtml,
+  escapeHtml,
+  formatMarkerPrice,
+  MAP_START_ZOOM
+} from '../utils/stationMap'
 import { animateMarkerLatLng, rafScheduler } from '../utils/mapAnimation'
 import type { StationMapView, StationMapMarker } from '../utils/stationMap'
 import { buildStationClusters, clusterRadiusKmForZoom } from '../utils/stationClusters'
@@ -311,7 +317,13 @@ function makeIconCluster(cluster: StationCluster, L: typeof import('leaflet')) {
   const tierClass = cluster.attractiveness === null
     ? ''
     : `jflp-cluster-tier-${Math.min(4, Math.max(0, Math.round(cluster.attractiveness * 4)))}`
-  const html = `<span class="jflp-cluster ${tierClass}" aria-hidden="true">${count}</span>`
+  // Prix du groupe (ticket 034) : le MEILLEUR prix frais, sous le disque. Sans
+  // prix frais, le disque garde son seul nombre — jamais un prix douteux.
+  const label =
+    cluster.minPrice === null
+      ? ''
+      : `<span class="jflp-cluster-label" aria-hidden="true">dès ${formatMarkerPrice(cluster.minPrice)} €</span>`
+  const html = `<span class="jflp-cluster ${tierClass}" aria-hidden="true">${count}</span>${label}`
   return L.divIcon({
     className: 'jflp-cluster-marker',
     html,
@@ -321,12 +333,19 @@ function makeIconCluster(cluster: StationCluster, L: typeof import('leaflet')) {
   })
 }
 
+// NFR-ACC-4 : la couleur du disque n'est jamais le seul vecteur — le prix du
+// groupe est aussi porté par le nom accessible (ticket 034).
 function clusterAccessibleName(cluster: StationCluster): string {
-  return `${cluster.markerIds.length} stations regroupées`
+  const base = `${cluster.markerIds.length} stations regroupées`
+  if (cluster.minPrice === null) return base
+  return `${base}, à partir de ${formatMarkerPrice(cluster.minPrice)} €/L`
 }
 
+// Le prix fait partie de la signature : sinon un cluster dont le meilleur prix
+// change (rafraîchissement, changement de carburant) garderait son ancien
+// libellé, les ids de membres étant inchangés.
 function clusterKey(cluster: StationCluster): string {
-  return cluster.markerIds.slice().sort().join(',')
+  return `${cluster.markerIds.slice().sort().join(',')}|${cluster.minPrice ?? ''}`
 }
 
 function syncClusters(clusters: StationCluster[]) {

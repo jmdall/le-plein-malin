@@ -19,7 +19,12 @@ import {
 } from '../../app/utils/stationClusters'
 import type { StationMapMarker } from '../../app/utils/stationMap'
 
-function marker(id: string, lat: number, lon: number): StationMapMarker {
+function marker(
+  id: string,
+  lat: number,
+  lon: number,
+  overrides: Partial<StationMapMarker> = {}
+): StationMapMarker {
   return {
     id,
     name: `Station ${id}`,
@@ -37,7 +42,8 @@ function marker(id: string, lat: number, lon: number): StationMapMarker {
     ageLabel: '',
     isStale: false,
     attractiveness: null,
-    directionsUrl: 'https://www.openstreetmap.org/directions?from=&to='
+    directionsUrl: 'https://www.openstreetmap.org/directions?from=&to=',
+    ...overrides
   }
 }
 
@@ -166,5 +172,70 @@ describe('buildStationClusters (clustering des marqueurs superposés)', () => {
     const view = buildStationClusters([a, b], CLUSTER_BASE_RADIUS_KM)
     expect(view.clusters).toHaveLength(1)
     expect(view.clusters[0]!.attractiveness).toBeNull()
+  })
+})
+
+// ——— Ticket 034 : le cluster porte le meilleur prix de son groupe ———
+// Le MINIMUM, pas la moyenne : le disque porte déjà le dégradé de sa station la
+// moins chère, donc afficher une moyenne ferait dire deux choses au même
+// disque. Et c'est le meilleur prix qui déclenche un détour.
+describe('minPrice du cluster (ticket 034)', () => {
+  // 0.005° de latitude ≈ 0.56 km : bien en dessous du rayon de fusion de 2 km.
+  const near = (id: string, overrides: Partial<StationMapMarker> = {}) =>
+    marker(id, 48.85, 2.35, overrides)
+
+  it('le cluster porte le prix le PLUS BAS de son groupe', () => {
+    const markers = [
+      near('a', { price: 1.949, lat: 48.85 }),
+      near('b', { price: 1.712, lat: 48.851 }),
+      near('c', { price: 1.83, lat: 48.852 })
+    ]
+    const { clusters } = buildStationClusters(markers, 2)
+    expect(clusters).toHaveLength(1)
+    expect(clusters[0]!.markerIds).toHaveLength(3)
+    expect(clusters[0]!.minPrice).toBe(1.712)
+  })
+
+  // CONTEXT.md §Fraîcheur : annoncer « dès X € » sur un prix de trois jours
+  // serait exactement la promesse que l'app refuse de faire.
+  it('un prix périmé (> 24 h) ne peut pas fournir le prix affiché', () => {
+    const markers = [
+      near('frais', { price: 1.949, lat: 48.85 }),
+      near('perime', { price: 1.5, isStale: true, lat: 48.851 })
+    ]
+    const { clusters } = buildStationClusters(markers, 2)
+    expect(clusters[0]!.minPrice).toBe(1.949)
+  })
+
+  it('groupe entièrement périmé → minPrice null (le nombre reste, pas de prix)', () => {
+    const markers = [
+      near('p1', { price: 1.5, isStale: true, lat: 48.85 }),
+      near('p2', { price: 1.6, isStale: true, lat: 48.851 })
+    ]
+    const { clusters } = buildStationClusters(markers, 2)
+    expect(clusters).toHaveLength(1)
+    expect(clusters[0]!.minPrice).toBeNull()
+  })
+
+  it('un prix non fini n’est jamais retenu', () => {
+    const markers = [
+      near('nan', { price: Number.NaN, lat: 48.85 }),
+      near('ok', { price: 1.8, lat: 48.851 })
+    ]
+    const { clusters } = buildStationClusters(markers, 2)
+    expect(clusters[0]!.minPrice).toBe(1.8)
+  })
+
+  it('deux clusters distincts portent chacun le minimum de SON groupe', () => {
+    const markers = [
+      marker('a1', 48.85, 2.35, { price: 1.9 }),
+      marker('a2', 48.851, 2.35, { price: 1.75 }),
+      // ~11 km plus au nord : hors du rayon de fusion de 2 km.
+      marker('b1', 48.95, 2.35, { price: 1.99 }),
+      marker('b2', 48.951, 2.35, { price: 1.88 })
+    ]
+    const { clusters } = buildStationClusters(markers, 2)
+    expect(clusters).toHaveLength(2)
+    expect(clusters.map((c) => c.minPrice).sort()).toEqual([1.75, 1.88])
   })
 })

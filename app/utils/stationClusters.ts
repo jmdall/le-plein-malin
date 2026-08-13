@@ -40,6 +40,13 @@ export interface StationCluster {
       du meilleur prix : il dit « il y a mieux ici » avant même d'ouvrir.
       null si aucune station du groupe n'a d'attractivité. */
   attractiveness: number | null
+  /** Prix le plus bas du groupe, parmi les stations FRAÎCHES uniquement
+      (ticket 034). Le MINIMUM et non la moyenne : le disque porte déjà le
+      dégradé de sa station la moins chère, donc une moyenne ferait dire deux
+      choses au même disque — et c'est le meilleur prix qui déclenche un détour.
+      Les prix > 24 h sont exclus : « dès X € » ne doit jamais reposer sur une
+      donnée périmée (CONTEXT.md §Fraîcheur). null si aucun prix frais. */
+  minPrice: number | null
 }
 
 export interface StationClusterView {
@@ -49,6 +56,13 @@ export interface StationClusterView {
       tout cluster, PLUS les points d'ancrage (référence / recommandée),
       jamais regroupés. */
   individuals: string[]
+}
+
+// Prix utilisable pour le libellé « dès X € » : frais (≤ 24 h) et fini.
+// Un prix périmé ou aberrant ne devient jamais la promesse du cluster.
+function freshPrice(marker: StationMapMarker): number | null {
+  if (marker.isStale) return null
+  return Number.isFinite(marker.price) ? marker.price : null
 }
 
 export function buildStationClusters(
@@ -88,12 +102,18 @@ export function buildStationClusters(
       if (marker.attractiveness !== null) {
         target.attractiveness = Math.max(target.attractiveness ?? -Infinity, marker.attractiveness)
       }
+      // Prix affiché : le MIN des membres frais (ticket 034).
+      const price = freshPrice(marker)
+      if (price !== null) {
+        target.minPrice = Math.min(target.minPrice ?? Infinity, price)
+      }
     } else {
       clusters.push({
         markerIds: [marker.id],
         lat: marker.lat,
         lon: marker.lon,
-        attractiveness: marker.attractiveness
+        attractiveness: marker.attractiveness,
+        minPrice: freshPrice(marker)
       })
     }
   }
