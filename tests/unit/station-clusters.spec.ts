@@ -18,6 +18,7 @@ import {
   clusterRadiusKmForZoom
 } from '../../app/utils/stationClusters'
 import type { StationMapMarker } from '../../app/utils/stationMap'
+import { haversineKm } from '../../domain/fuel-prices/haversine'
 
 function marker(
   id: string,
@@ -237,5 +238,186 @@ describe('minPrice du cluster (ticket 034)', () => {
     const { clusters } = buildStationClusters(markers, 2)
     expect(clusters).toHaveLength(2)
     expect(clusters.map((c) => c.minPrice).sort()).toEqual([1.75, 1.88])
+  })
+})
+
+// ——— Ticket 036 : indexation spatiale (grille) ———
+// buildStationClusters comparait chaque marqueur à TOUS les clusters formés
+// (O(n·k)) : 4,3 s pour 9 500 stations au zoom 10, donc l'exploration libre de
+// la carte (ticket 038) était impossible. La grille ne change PAS le résultat,
+// seulement le nombre de candidats examinés : la garantie est qu'un cluster à
+// moins de R se trouve forcément dans l'une des 9 cellules voisines.
+
+// Jeu pseudo-aléatoire DÉTERMINISTE sur la France métropolitaine (pas de
+// Math.random : un test de clustering doit être reproductible).
+function spreadMarkers(n: number): StationMapMarker[] {
+  const out: StationMapMarker[] = []
+  for (let i = 0; i < n; i++) {
+    const a = (i * 2654435761) % 4294967296
+    const b = (i * 1597334677) % 4294967296
+    out.push(
+      marker(`s${i}`, 42.5 + (a / 4294967296) * 8.5, -4 + (b / 4294967296) * 13, {
+        price: 1.6 + (a % 500) / 1000,
+        attractiveness: (b % 1000) / 1000
+      })
+    )
+  }
+  return out
+}
+
+// Implémentation NAÏVE de référence : exactement l'algorithme d'avant le ticket
+// 036 (chaque marqueur contre tous les clusters). Elle sert d'oracle.
+function naiveClusters(markers: StationMapMarker[], mergeRadiusKm: number) {
+  const clusters: Array<{
+    markerIds: string[]
+    lat: number
+    lon: number
+    attractiveness: number | null
+    minPrice: number | null
+  }> = []
+  const fresh = (m: StationMapMarker) =>
+    m.isStale || !Number.isFinite(m.price) ? null : m.price
+
+  for (const m of markers) {
+    if (m.isReference || m.isRecommended) continue
+    let target: (typeof clusters)[number] | null = null
+    let best = Infinity
+    for (const c of clusters) {
+      const d = haversineKm({ lat: m.lat, lon: m.lon }, { lat: c.lat, lon: c.lon })
+      if (d <= mergeRadiusKm && d < best) {
+        target = c
+        best = d
+      }
+    }
+    if (target) {
+      target.markerIds.push(m.id)
+      const total = target.markerIds.length
+      target.lat = (target.lat * (total - 1) + m.lat) / total
+      target.lon = (target.lon * (total - 1) + m.lon) / total
+      if (m.attractiveness !== null) {
+        target.attractiveness = Math.max(target.attractiveness ?? -Infinity, m.attractiveness)
+      }
+      const p = fresh(m)
+      if (p !== null) target.minPrice = Math.min(target.minPrice ?? Infinity, p)
+    } else {
+      clusters.push({
+        markerIds: [m.id],
+        lat: m.lat,
+        lon: m.lon,
+        attractiveness: m.attractiveness,
+        minPrice: fresh(m)
+      })
+    }
+  }
+  return clusters.filter((c) => c.markerIds.length > 1)
+}
+
+describe('buildStationClusters — indexation spatiale (ticket 036)', () => {
+  // La preuve de non-régression : même résultat que l'oracle naïf, à la
+  // virgule près, sur un jeu assez dense pour créer des cas limites.
+  it('donne EXACTEMENT le même résultat que l’implémentation naïve', () => {
+    for (const [n, radius] of [
+      [400, 8],
+      [400, 20],
+      [900, 5],
+      // Échelle réelle : c'est là que la garantie des 9 cellules se joue
+      // vraiment (une cellule trop étroite en km laisserait échapper un
+      // cluster à moins de R, et le résultat divergerait de l'oracle).
+      [9500, 16]
+    ] as const) {
+      const markers = spreadMarkers(n)
+      const actual = buildStationClusters(markers, radius).clusters
+      const expected = naiveClusters(markers, radius)
+
+      expect(actual.length, `n=${n} r=${radius}`).toBe(expected.length)
+      const key = (c: { markerIds: string[] }) => c.markerIds.slice().sort().join(',')
+      const actualByKey = new Map(actual.map((c) => [key(c), c]))
+      for (const want of expected) {
+        const got = actualByKey.get(key(want))
+        expect(got, `groupe ${key(want)} (n=${n} r=${radius})`).toBeDefined()
+        expect(got!.lat).toBeCloseTo(want.lat, 9)
+        expect(got!.lon).toBeCloseTo(want.lon, 9)
+        expect(got!.attractiveness).toBe(want.attractiveness)
+        expect(got!.minPrice).toBe(want.minPrice)
+      }
+    }
+  })
+
+  it('les individuels sont les mêmes que ceux de l’implémentation naïve', () => {
+    const markers = spreadMarkers(600)
+    const view = buildStationClusters(markers, 10)
+    const clustered = new Set(naiveClusters(markers, 10).flatMap((c) => c.markerIds))
+    const expected = markers.filter((m) => !clustered.has(m.id)).map((m) => m.id)
+    expect(view.individuals).toEqual(expected)
+  })
+
+  // Le cas que la grille pourrait casser : deux marqueurs très proches mais de
+  // part et d'autre d'une frontière de cellule. Ils DOIVENT fusionner — d'où
+  // l'examen des 9 cellules voisines et non de la seule cellule du marqueur.
+  it('fusionne deux marqueurs proches séparés par une frontière de cellule', () => {
+    const radius = 2
+    // Pas de la grille en latitude ≈ radius / 111.19. On place deux marqueurs
+    // à 100 m de part et d'autre d'un multiple exact de ce pas.
+    const step = radius / 111.19
+    const boundary = Math.ceil(48 / step) * step
+    const delta = 0.05 / 111.19 // ~50 m
+    const view = buildStationClusters(
+      [marker('gauche', boundary - delta, 2.35), marker('droite', boundary + delta, 2.35)],
+      radius
+    )
+    expect(view.clusters).toHaveLength(1)
+    expect(view.clusters[0]!.markerIds.sort()).toEqual(['droite', 'gauche'])
+  })
+
+  // Garde de charge : l'échelle réelle (9 500 stations Gazole en base). La
+  // borne est large — l'implémentation en grille tourne ~2 ordres de grandeur
+  // sous les 4 344 ms mesurés avant le ticket 036 — pour ne pas être instable
+  // en CI tout en attrapant un retour à un algorithme quadratique.
+  it('tient l’échelle de la France : 9 500 marqueurs sous 500 ms à chaque zoom', () => {
+    const markers = spreadMarkers(9500)
+    for (const zoom of [6, 8, 10, 12]) {
+      const radius = clusterRadiusKmForZoom(zoom)
+      const started = performance.now()
+      buildStationClusters(markers, radius)
+      const elapsed = performance.now() - started
+      expect(elapsed, `zoom ${zoom} (rayon ${radius} km) : ${elapsed.toFixed(0)} ms`).toBeLessThan(
+        500
+      )
+    }
+  }, 60_000)
+})
+
+// Régression ciblée sur la cause de la divergence corrigée pendant le 036 :
+// un degré de longitude vaut 111,19 × cos(lat) km, donc une cellule d'un pas
+// FIXE en degrés se rétrécit en km vers le nord. Si elle descend sous R, un
+// cluster à moins de R km tombe à deux cellules et échappe à la fenêtre 3×3.
+// Ce test échoue si l'on revient à un cos fixe pris au centre de la France.
+describe('largeur de cellule et latitude (ticket 036)', () => {
+  it('fusionne deux marqueurs proches tout au nord du territoire', () => {
+    const radius = 10
+    // Dunkerque (51,03° N) : cos(51°) ≈ 0,629 contre 0,688 à 46,5° — une
+    // cellule dimensionnée sur 46,5° y serait ~9 % trop étroite.
+    const lat = 51.03
+    // Deux marqueurs écartés de ~9 km en longitude : sous le rayon de 10 km,
+    // donc ils DOIVENT fusionner quel que soit le découpage de la grille.
+    const kmPerDegLon = 111.19 * Math.cos((lat * Math.PI) / 180)
+    const a = marker('nord-a', lat, 2.37)
+    const b = marker('nord-b', lat, 2.37 + 9 / kmPerDegLon)
+    expect(haversineKm({ lat: a.lat, lon: a.lon }, { lat: b.lat, lon: b.lon })).toBeLessThan(radius)
+
+    const view = buildStationClusters([a, b], radius)
+    expect(view.clusters).toHaveLength(1)
+    expect(view.clusters[0]!.markerIds.sort()).toEqual(['nord-a', 'nord-b'])
+  })
+
+  it('reste exact sur un jeu étalé du sud au nord du territoire', () => {
+    const markers: StationMapMarker[] = []
+    for (let i = 0; i < 500; i++) {
+      // Une colonne dense de 41° à 51,5° : toutes les largeurs de cellule.
+      markers.push(marker(`col${i}`, 41 + (i * 10.5) / 500, 2.35 + (i % 7) * 0.02))
+    }
+    const view = buildStationClusters(markers, 12)
+    const expected = naiveClusters(markers, 12)
+    expect(view.clusters).toHaveLength(expected.length)
   })
 })
