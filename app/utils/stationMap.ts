@@ -16,7 +16,15 @@ import { buildDirectionsUrl } from './location'
 import { FRESHNESS_LABELS } from './stations'
 import { formatPrice, formatDistance, formatAgeLabel } from './format'
 import { displayLogoFor, brandInitial } from './stationIdentity'
+import {
+  computeAttractivenessInScale,
+  computeVisiblePriceScale
+} from '../../domain/fuel-prices/priceAttractiveness'
+import type { VisiblePriceScale } from '../../domain/fuel-prices/priceAttractiveness'
 import type { ListedStation } from './stations'
+
+export { computeVisiblePriceScale }
+export type { VisiblePriceScale }
 
 export const MAP_START_ZOOM = 11
 
@@ -49,6 +57,11 @@ export interface StationMapMarker {
       0,5). null seulement si aucune base de prix n'est disponible. */
   attractiveness: number | null
   directionsUrl: string
+  /** Marqueur d'EXPLORATION (ticket 039) : issu de /api/map/stations, il ne
+      porte ni nom, ni enseigne, ni distance, ni économies — juste une position
+      et un prix. Pas de popup : le clic zoome, et la recherche par rayon prend
+      alors le relais avec un marqueur complet. */
+  isBrowse: boolean
 }
 
 export interface StationMapCenter {
@@ -102,7 +115,8 @@ export function buildStationMapView(
       ageLabel: formatAgeLabel(s.freshness.ageInHours),
       isStale: s.freshness.ageInHours > 24,
       attractiveness: s.attractiveness ?? null,
-      directionsUrl: buildDirectionsUrl(s.position)
+      directionsUrl: buildDirectionsUrl(s.position),
+      isBrowse: false
     }
   })
 
@@ -153,4 +167,58 @@ export function escapeHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+// ——— Marqueurs d'exploration (ticket 039) ———
+// Issus de /api/map/stations : position, prix, fraîcheur. Rien d'autre — on
+// n'embarque pas les noms dans la charge utile d'emprise (mesuré : +34 Ko gzip
+// sur la France entière, +31 %), donc pas de popup honnête possible. Le clic
+// zoome ; la recherche par rayon fournit ensuite le marqueur complet.
+//
+// La couleur vient de la distribution des prix AFFICHÉS (décision produit) et
+// non de la station de référence, qui n'existe pas hors du rayon. `scale` est
+// donc calculée par l'appelant sur l'ensemble des stations chargées.
+//
+// `exclude` porte les ids déjà rendus par la recherche par rayon : ces
+// stations-là ont une version riche, elles ne doivent pas être doublées.
+export function buildBrowseMarkers(
+  stations: Array<{
+    id: string
+    lat: number
+    lon: number
+    price: number
+    ageInHours: number
+    status: 'fresh' | 'stale' | 'obsolete'
+  }>,
+  scale: VisiblePriceScale | null,
+  exclude: Set<string>
+): StationMapMarker[] {
+  const markers: StationMapMarker[] = []
+  for (const s of stations) {
+    if (exclude.has(s.id)) continue
+    markers.push({
+      id: s.id,
+      // Pas de nom disponible : l'app n'affiche JAMAIS un identifiant à la
+      // place d'un nom. Le libellé accessible dit ce qu'on sait vraiment.
+      name: '',
+      brand: null,
+      logoUrl: null,
+      lat: s.lat,
+      lon: s.lon,
+      isReference: false,
+      isRecommended: false,
+      price: s.price,
+      priceLabel: formatPrice(s.price),
+      markerPriceLabel: formatMarkerPrice(s.price),
+      // Aucune distance : sans centre de recherche, elle n'a pas de sens ici.
+      distanceLabel: '',
+      freshnessLabel: FRESHNESS_LABELS[s.status],
+      ageLabel: formatAgeLabel(s.ageInHours),
+      isStale: s.ageInHours > 24,
+      attractiveness: scale ? computeAttractivenessInScale(s.price, scale) : null,
+      directionsUrl: buildDirectionsUrl({ lat: s.lat, lon: s.lon }),
+      isBrowse: true
+    })
+  }
+  return markers
 }

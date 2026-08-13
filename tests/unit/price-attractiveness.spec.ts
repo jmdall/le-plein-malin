@@ -8,7 +8,9 @@ import { describe, expect, it } from 'vitest'
 import {
   computePriceAttractiveness,
   computePriceAttractivenessBand,
-  PRICE_ATTRACTIVENESS_BAND_FRACTION
+  PRICE_ATTRACTIVENESS_BAND_FRACTION,
+  computeVisiblePriceScale,
+  computeAttractivenessInScale
 } from '../../domain/fuel-prices/priceAttractiveness'
 
 describe('computePriceAttractiveness (module pur)', () => {
@@ -74,5 +76,81 @@ describe('computePriceAttractivenessBand (module pur)', () => {
     const band = computePriceAttractivenessBand(2.0, 0.2)
     expect(band.min).toBeCloseTo(2.0 * 0.8, 6)
     expect(band.max).toBeCloseTo(2.0 * 1.2, 6)
+  })
+})
+
+// ——— Ticket 039 : échelle sur la distribution VISIBLE ———
+// En exploration libre il n'y a pas de station de référence : la couleur se base
+// sur les prix actuellement affichés. Déciles (p10→p90) et non min/max — une
+// seule station aberrante écraserait sinon tout le dégradé sur une extrémité.
+describe('computeVisiblePriceScale (ticket 039)', () => {
+  it('null sans aucun prix : pas d’échelle inventée', () => {
+    expect(computeVisiblePriceScale([])).toBeNull()
+  })
+
+  it('null quand aucun prix n’est exploitable', () => {
+    expect(computeVisiblePriceScale([Number.NaN, Number.POSITIVE_INFINITY])).toBeNull()
+  })
+
+  it('un seul prix : échelle dégénérée mais définie (low = high)', () => {
+    const scale = computeVisiblePriceScale([1.8])
+    expect(scale).not.toBeNull()
+    expect(scale!.low).toBe(1.8)
+    expect(scale!.high).toBe(1.8)
+  })
+
+  it('bâtit l’échelle sur les déciles, pas sur les extrêmes', () => {
+    // 1,50 et 3,00 sont des valeurs aberrantes isolées ; le cœur est 1,7…1,9.
+    const prices = [1.5, 1.7, 1.72, 1.75, 1.78, 1.8, 1.82, 1.85, 1.88, 1.9, 3.0]
+    const scale = computeVisiblePriceScale(prices)!
+    expect(scale.low).toBeGreaterThan(1.5)
+    expect(scale.high).toBeLessThan(3.0)
+  })
+
+  it('ignore les valeurs non finies sans planter', () => {
+    const scale = computeVisiblePriceScale([1.7, Number.NaN, 1.9, Number.POSITIVE_INFINITY])!
+    expect(Number.isFinite(scale.low)).toBe(true)
+    expect(Number.isFinite(scale.high)).toBe(true)
+  })
+
+  it('l’ordre d’entrée n’a aucune influence', () => {
+    const a = computeVisiblePriceScale([1.7, 1.8, 1.9, 2.0])!
+    const b = computeVisiblePriceScale([2.0, 1.9, 1.7, 1.8])!
+    expect(a).toEqual(b)
+  })
+})
+
+describe('computeAttractivenessInScale (ticket 039)', () => {
+  const scale = { low: 1.7, high: 1.9 }
+
+  // Même convention que computePriceAttractiveness : 1 = moins cher (vert).
+  it('1 pour le bas de l’échelle, 0 pour le haut', () => {
+    expect(computeAttractivenessInScale(1.7, scale)).toBe(1)
+    expect(computeAttractivenessInScale(1.9, scale)).toBe(0)
+  })
+
+  it('0,5 au milieu de l’échelle', () => {
+    expect(computeAttractivenessInScale(1.8, scale)).toBeCloseTo(0.5, 10)
+  })
+
+  it('sature hors de l’échelle, jamais de valeur hors [0,1]', () => {
+    expect(computeAttractivenessInScale(1.2, scale)).toBe(1)
+    expect(computeAttractivenessInScale(3.5, scale)).toBe(0)
+  })
+
+  it('échelle dégénérée (low = high) → milieu neutre, pas une division par zéro', () => {
+    expect(computeAttractivenessInScale(1.8, { low: 1.8, high: 1.8 })).toBe(0.5)
+  })
+
+  it('null pour un prix non exploitable : aucune couleur inventée', () => {
+    expect(computeAttractivenessInScale(Number.NaN, scale)).toBeNull()
+  })
+
+  it('monotone décroissant : plus cher ⇒ moins vert', () => {
+    const a = computeAttractivenessInScale(1.72, scale)!
+    const b = computeAttractivenessInScale(1.8, scale)!
+    const c = computeAttractivenessInScale(1.88, scale)!
+    expect(a).toBeGreaterThan(b)
+    expect(b).toBeGreaterThan(c)
   })
 })

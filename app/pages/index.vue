@@ -15,11 +15,13 @@ import { usePreferences, RADIUS_OPTIONS } from '../composables/usePreferences'
 import { useGeolocation } from '../composables/useGeolocation'
 import { useFuelRecommendation } from '../composables/useFuelRecommendation'
 import { useStations } from '../composables/useStations'
+import { useMapStations } from '../composables/useMapStations'
 import { resolveSearchInput, saveLocation } from '../utils/location'
 import { OSM_ATTRIBUTION_NOTE } from '../utils/stationIdentity'
 import type { LocationSelection } from '../utils/autocomplete'
 import type { RecommendationRequest } from '../utils/recommendation'
 import type { StationsRequest } from '../utils/stations'
+import type { MapViewBounds } from '../utils/mapBounds'
 
 useHead({
   title: 'Je fais le plein ou non ?',
@@ -37,6 +39,26 @@ const prefs = usePreferences()
 const geo = useGeolocation()
 const reco = useFuelRecommendation()
 const stations = useStations()
+// Exploration libre (ticket 039) : magasin cumulatif chargé par emprise. Les
+// marqueurs ne disparaissent plus au déplacement de la carte.
+const mapStations = useMapStations()
+
+// ——— Seuil de zoom de la recommandation (ticket 039) ———
+// Au-dessus, un pan relance la recommandation comme avant. En dessous, c'est de
+// l'exploration : relancer une recherche de rayon 10 km autour d'un centre
+// arbitraire pendant qu'on regarde la France ne veut rien dire — et ça coûte
+// deux appels API par pan. La recommandation garde alors la dernière position
+// explicitement choisie.
+const RECOMMENDATION_MIN_ZOOM = 10
+const mapZoom = ref<number | null>(null)
+
+// L'emprise visible arrive de la carte (débouncée). Charger des marqueurs ne
+// déplace JAMAIS la carte, et aucune position utilisateur n'est transmise
+// (LOC-4) — c'est le viewport, pas l'utilisateur.
+function onMapBounds(bounds: MapViewBounds & { zoom: number }) {
+  mapZoom.value = bounds.zoom
+  void mapStations.load(bounds, prefs.fuel.value)
+}
 
 const searchMessage = ref<string | null>(null)
 const appliedLocation = ref<{ label: string; mode: 'geo' | 'query' } | null>(null)
@@ -111,6 +133,11 @@ function requestRecenter(lat: number, lon: number) {
 // vient de la bouger ; on ne fait que rafraîchir les données autour du
 // nouveau centre. ———
 async function onMapRecenter(center: { lat: number; lon: number }) {
+  // Sous le seuil de zoom, un pan n'est que de l'exploration : les marqueurs se
+  // chargent (onMapBounds), mais la recommandation n'est pas relancée.
+  if (mapZoom.value !== null && mapZoom.value < RECOMMENDATION_MIN_ZOOM) {
+    return
+  }
   if (mapRecenterInFlight.value) {
     mapRecenterPending.value = center
     return
@@ -436,7 +463,9 @@ const bottomOverlaysHidden = computed(() => isMobile.value && sheetState.value =
       :result="stationsData"
       :recommended-station-id="recommendedStationId"
       :recenter-requested="recenterRequested"
+      :browse-stations="mapStations.stations.value"
       @recenter="onMapRecenter"
+      @bounds="onMapBounds"
     />
 
     <!-- Overlay haut : recherche + carburant -->
@@ -468,6 +497,12 @@ const bottomOverlaysHidden = computed(() => isMobile.value && sheetState.value =
          quand la feuille est étendue (elle recouvrirait cette zone). -->
     <div v-show="!bottomOverlaysHidden" class="map-overlay map-overlay-legend">
       <div class="overlay-card map-legend">
+        <!-- La couleur d'un marqueur d'exploration se situe par rapport aux
+             prix AFFICHÉS (ticket 039) : une même station peut donc changer de
+             teinte quand la carte bouge. La légende doit le dire — mais UNE
+             fois, en tête : répéter la phrase sur chaque ligne élargissait la
+             carte-légende au point de recouvrir les marqueurs. -->
+        <p class="map-legend-title">Prix vs stations affichées</p>
         <p class="map-legend-row"><span class="badge-dot" style="color: var(--marker-cheap)" />Moins cher</p>
         <p class="map-legend-row"><span class="badge-dot" style="color: var(--marker-exp)" />Plus cher</p>
         <p class="map-legend-row"><span class="badge-dot" style="color: var(--marker-rupture)" />Prix périmé</p>
@@ -656,6 +691,12 @@ const bottomOverlaysHidden = computed(() => isMobile.value && sheetState.value =
 .map-legend {
   display: grid;
   gap: 0.3rem;
+}
+.map-legend-title {
+  margin: 0 0 0.1rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-700);
 }
 .map-legend-row {
   margin: 0;

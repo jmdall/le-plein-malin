@@ -25,6 +25,25 @@ async function mockLogos(page: import('@playwright/test').Page) {
   })
 }
 
+// Neutralise la couche d'EXPLORATION (ticket 039). Les tests ci-dessous portent
+// sur la couche « recherche par rayon » : sans ce mock, ils taperaient le vrai
+// /api/map/stations, qui sert toute la base locale (~9 500 stations) et noierait
+// les marqueurs sous 175 clusters. L'exploration a son propre test dédié.
+async function mockEmptyBrowse(page: import('@playwright/test').Page) {
+  await page.route('**/api/map/stations*', (route) => {
+    void route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        stations: [],
+        bounds: { swLat: 48, swLon: 2, neLat: 49, neLon: 3 },
+        fuel: 'Gazole',
+        truncated: false
+      })
+    })
+  })
+}
+
 function station(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'st-1',
@@ -174,6 +193,7 @@ test('la carte se monte après une recherche avec mock API /api/stations', async
     })
   })
   await mockLogos(page)
+  await mockEmptyBrowse(page)
 
   await page.goto('/')
   await page.waitForLoadState('networkidle')
@@ -256,6 +276,7 @@ test('le touch sur un marqueur ouvre la popup et elle reste ouverte pendant le z
     })
   })
   await mockLogos(page)
+  await mockEmptyBrowse(page)
 
   await page.setViewportSize({ width: 393, height: 852 })
   await page.goto('/')
@@ -266,12 +287,16 @@ test('le touch sur un marqueur ouvre la popup et elle reste ouverte pendant le z
   await page.getByRole('button', { name: 'Rechercher', exact: true }).click()
   await expect(page.getByTestId('station-map-container')).toHaveClass(/leaflet-container/)
 
-  // L'overlay haut (recherche/carburant) recouvre les premiers marqueurs :
-  // on le masque pour que le badge du marqueur recommandé soit atteignable
-  // au toucher, comme il le serait sur une carte avec moins d'overlays.
+  // Les overlays flottants (recherche/carburant en haut, légende en bas à
+  // gauche) recouvrent des marqueurs : on les masque pour que le badge du
+  // marqueur recommandé soit atteignable au toucher, comme il le serait sur une
+  // carte avec moins d'overlays. La légende a été ajoutée à ce masquage au
+  // ticket 039 : elle a gagné une ligne de titre.
   await page.evaluate(() => {
-    const overlay = document.querySelector('.map-overlay-top') as HTMLElement | null
-    if (overlay) overlay.style.display = 'none'
+    for (const selector of ['.map-overlay-top', '.map-overlay-legend']) {
+      const overlay = document.querySelector(selector) as HTMLElement | null
+      if (overlay) overlay.style.display = 'none'
+    }
   })
 
   const badge = page.locator('.jflp-marker-recommended .jflp-badge-stack')
@@ -353,6 +378,7 @@ test('déplacer la carte relance la recherche (recommandation + stations) autour
     })
   })
   await mockLogos(page)
+  await mockEmptyBrowse(page)
 
   await page.goto('/')
   await page.waitForLoadState('networkidle')
@@ -471,6 +497,7 @@ test('le cluster affiche « dès » + le meilleur prix frais du groupe', async (
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(amas) })
   )
   await mockLogos(page)
+  await mockEmptyBrowse(page)
 
   await page.goto('/')
   await page.waitForLoadState('networkidle')
@@ -494,4 +521,131 @@ test('le cluster affiche « dès » + le meilleur prix frais du groupe', async (
     'title',
     '4 stations regroupées, à partir de 1,712 €/L'
   )
+})
+
+// ——— Ticket 039 : exploration libre — rien ne disparaît au déplacement ———
+// Avant ce ticket, la carte n'affichait que le résultat de la recherche par
+// rayon : panner relançait cette recherche et les marqueurs de la zone quittée
+// disparaissaient. Ici on vérifie le comportement observable : les marqueurs
+// d'exploration se cumulent, et panner dans une zone déjà chargée ne provoque
+// aucun appel.
+test('les marqueurs d’exploration se cumulent et ne disparaissent pas au pan', async ({ page }) => {
+  const mapCalls: string[] = []
+
+  // Endpoint d'emprise : renvoie des stations DANS l'emprise demandée, pour que
+  // dézoomer en découvre de nouvelles sans faire disparaître les précédentes.
+  await page.route('**/api/map/stations*', (route) => {
+    const url = route.request().url()
+    mapCalls.push(url)
+    const p = new URL(url).searchParams
+    const swLat = Number(p.get('swLat'))
+    const swLon = Number(p.get('swLon'))
+    const neLat = Number(p.get('neLat'))
+    const neLon = Number(p.get('neLon'))
+    // Une grille de 5×5 stations réparties dans l'emprise : plus l'emprise est
+    // large, plus les stations sont espacées — donc de nouveaux ids apparaissent.
+    const stations = []
+    for (let i = 0; i < 5; i++) {
+      for (let j = 0; j < 5; j++) {
+        const lat = swLat + ((neLat - swLat) * (i + 0.5)) / 5
+        const lon = swLon + ((neLon - swLon) * (j + 0.5)) / 5
+        stations.push({
+          id: `br-${lat.toFixed(3)}-${lon.toFixed(3)}`,
+          lat,
+          lon,
+          price: 1.7 + ((i * 5 + j) % 20) / 100,
+          ageInHours: 3,
+          status: 'fresh'
+        })
+      }
+    }
+    void route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        stations,
+        bounds: { swLat, swLon, neLat, neLon },
+        fuel: 'Gazole',
+        truncated: false
+      })
+    })
+  })
+  await page.route('**/api/recommendation*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(MOCK_RECOMMENDATION)
+    })
+  )
+  await page.route('**/api/stations*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(MOCK_STATIONS)
+    })
+  )
+  await mockLogos(page)
+
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(1500)
+  await page.getByPlaceholder('Rechercher une ville, une adresse…').fill('Paris')
+  await page.getByRole('button', { name: 'Rechercher', exact: true }).click()
+  await expect(page.getByTestId('station-map-container')).toHaveClass(/leaflet-container/)
+
+  // L'emprise est demandée dès que la carte est prête (débounce 350 ms).
+  await expect.poll(() => mapCalls.length, { timeout: 15_000 }).toBeGreaterThan(0)
+
+  // Le compteur de marqueurs reflète les deux couches réunies : bien plus que
+  // les 5 stations de la recherche par rayon.
+  const counted = () =>
+    page.evaluate(
+      () =>
+        document.querySelectorAll('.jflp-marker').length +
+        document.querySelectorAll('.jflp-cluster-marker').length
+    )
+  await expect.poll(counted, { timeout: 15_000 }).toBeGreaterThan(2)
+  const before = await counted()
+
+  // Dézoomer : de nouvelles stations arrivent, AUCUNE ne disparaît.
+  // Molette plutôt que le bouton « Dézoomer » : celui-ci est recouvert par le
+  // FAB de recentrage (même coin bas-droit), et la molette est de toute façon
+  // le geste réel d'un utilisateur.
+  const callsBeforeZoom = mapCalls.length
+  const zoomBox = (await page.getByTestId('station-map-container').boundingBox())!
+  await page.mouse.move(zoomBox.x + zoomBox.width * 0.5, zoomBox.y + zoomBox.height * 0.4)
+  await page.mouse.wheel(0, 400)
+  await page.waitForTimeout(600)
+  await page.mouse.wheel(0, 400)
+  await expect.poll(() => mapCalls.length, { timeout: 15_000 }).toBeGreaterThan(callsBeforeZoom)
+  await expect.poll(counted, { timeout: 15_000 }).toBeGreaterThanOrEqual(before)
+
+  // Panner À L'INTÉRIEUR de la zone déjà chargée : aucun nouvel appel.
+  // On attend d'abord que les chargements du zoom soient tous retombés (debounce
+  // 350 ms + réseau) : sinon un appel encore en vol serait compté comme causé
+  // par le pan.
+  let stable = -1
+  await expect
+    .poll(
+      async () => {
+        const previous = stable
+        stable = mapCalls.length
+        await page.waitForTimeout(400)
+        return previous === mapCalls.length ? 'stable' : 'en cours'
+      },
+      { timeout: 15_000 }
+    )
+    .toBe('stable')
+  const callsBeforePan = mapCalls.length
+  const box = (await page.getByTestId('station-map-container').boundingBox())!
+  await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.45)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.7 + 40, box.y + box.height * 0.45 + 20, { steps: 5 })
+  await page.mouse.up()
+  await page.waitForTimeout(1200)
+  expect(mapCalls.length).toBe(callsBeforePan)
+
+  // La légende dit à QUOI la couleur se compare : sans ça, une teinte qui change
+  // au déplacement de la carte est ininterprétable (ticket 039).
+  await expect(page.locator('.map-legend')).toContainText('Prix vs stations affichées')
 })

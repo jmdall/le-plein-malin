@@ -25,8 +25,10 @@
 //   - contrôles de zoom ≥ 44 px (NFR-RES-2) et libellés français.
 import { computed, ref, watch, nextTick, onBeforeUnmount } from 'vue'
 import {
+  buildBrowseMarkers,
   buildStationMapView,
   buildPopupHtml,
+  computeVisiblePriceScale,
   escapeHtml,
   formatMarkerPrice,
   MAP_START_ZOOM
@@ -37,6 +39,8 @@ import { buildStationClusters, clusterRadiusKmForZoom } from '../utils/stationCl
 import type { StationCluster } from '../utils/stationClusters'
 import { brandInitial } from '../utils/stationIdentity'
 import type { StationsQueryResult } from '../utils/stations'
+import type { MapViewBounds } from '../utils/mapBounds'
+import type { MapStation } from '../composables/useMapStations'
 
 const props = defineProps<{
   result: StationsQueryResult | null
@@ -48,6 +52,11 @@ const props = defineProps<{
    *  ville/CP, bouton « Recentrer », clic sur un marqueur) déclenche un
    *  flyTo. Le pan de l'utilisateur garde le contrôle de la carte. */
   recenterRequested?: { lat: number; lon: number; token: number } | null
+  /** Stations d'EXPLORATION (ticket 039) : chargées par emprise et cumulées,
+   *  elles ne disparaissent jamais au déplacement. Rendues en marqueurs légers
+   *  (position + prix), sans popup — le clic zoome. Une station déjà présente
+   *  dans `result` n'est pas doublée : la version riche gagne. */
+  browseStations?: MapStation[]
 }>()
 
 // ——— Recherche au déplacement (demande produit : déplacer la carte doit
@@ -60,6 +69,10 @@ const props = defineProps<{
 // pas rejouer la même recherche pour un micro-déplacement. ———
 const emit = defineEmits<{
   recenter: [{ lat: number; lon: number }]
+  /** Emprise visible (ticket 039), débouncée : la page charge les stations de
+   *  cette zone. Émise après tout déplacement OU zoom, y compris programmatique
+   *  — on veut les marqueurs de la zone affichée, quelle qu'en soit la cause. */
+  bounds: [MapViewBounds & { zoom: number }]
 }>()
 
 let recenterTimer: ReturnType<typeof setTimeout> | null = null
@@ -87,7 +100,20 @@ let markerIconSignatures = new Map<string, string>()
 let clusterLayers = new Map<string, import('leaflet').Marker>()
 let resizeObserver: ResizeObserver | null = null
 
-const markerCount = computed(() => view.value.markers.length)
+// Les deux couches réunies (ticket 039). L'échelle de couleur des marqueurs
+// d'exploration est calculée sur TOUS les prix affichés (décision produit) :
+// c'est ce que la légende annonce (« que les stations affichées »).
+const allMarkers = computed<StationMapMarker[]>(() => {
+  const rich = view.value.markers
+  const browse = props.browseStations ?? []
+  if (browse.length === 0) return rich
+  const richIds = new Set(rich.map((m) => m.id))
+  const prices = [...rich.map((m) => m.price), ...browse.map((s) => s.price)]
+  const scale = computeVisiblePriceScale(prices)
+  return [...rich, ...buildBrowseMarkers(browse, scale, richIds)]
+})
+
+const markerCount = computed(() => allMarkers.value.length)
 
 watch(
   [() => props.result, () => props.recommendedStationId],
@@ -114,7 +140,7 @@ watch(
 )
 
 watch(
-  () => view.value,
+  [() => view.value, () => props.browseStations],
   () => {
     if (import.meta.client && map) {
       syncMarkers()
@@ -191,10 +217,44 @@ function onMapDragEnd() {
   }, RECENTER_DEBOUNCE_MS)
 }
 
+// ——— Emprise visible → chargement des stations d'exploration (ticket 039) ———
+// `moveend` couvre pan ET zoom, y compris les flyTo programmatiques : on veut
+// les marqueurs de la zone affichée, quelle qu'en soit la cause. Débouncé pour
+// coalescer un zoom continu. Émettre une emprise ne DÉPLACE jamais la carte.
+const BOUNDS_DEBOUNCE_MS = 350
+let boundsTimer: ReturnType<typeof setTimeout> | null = null
+
+function emitBounds() {
+  if (!map) return
+  const b = map.getBounds()
+  emit('bounds', {
+    swLat: b.getSouth(),
+    swLon: b.getWest(),
+    neLat: b.getNorth(),
+    neLon: b.getEast(),
+    zoom: map.getZoom()
+  })
+}
+
+function onMapMoveEnd() {
+  if (boundsTimer !== null) clearTimeout(boundsTimer)
+  boundsTimer = setTimeout(() => {
+    boundsTimer = null
+    emitBounds()
+  }, BOUNDS_DEBOUNCE_MS)
+}
+
 function cancelRecenter() {
   if (recenterTimer !== null) {
     clearTimeout(recenterTimer)
     recenterTimer = null
+  }
+}
+
+function cancelBounds() {
+  if (boundsTimer !== null) {
+    clearTimeout(boundsTimer)
+    boundsTimer = null
   }
 }
 
@@ -261,6 +321,10 @@ async function ensureMap() {
     // distance pour ne pas spammer l'API pendant un pan continu.
     map.on('dragend', onMapDragEnd)
 
+    // Emprise visible (ticket 039) : à l'init puis à chaque déplacement/zoom.
+    map.on('moveend', onMapMoveEnd)
+    emitBounds()
+
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => map?.invalidateSize())
       resizeObserver.observe(containerRef.value)
@@ -273,6 +337,15 @@ async function ensureMap() {
 }
 
 function accessibleName(marker: StationMapMarker): string {
+  // Marqueur d'exploration : pas de nom disponible. On dit ce qu'on sait
+  // réellement, et ce que le clic fait — jamais un identifiant à la place d'un
+  // nom (ticket 039, NFR-ACC-4).
+  if (marker.isBrowse) {
+    const browse = [`Station à ${marker.priceLabel}`]
+    if (marker.isStale) browse.push(`${marker.freshnessLabel} — ${marker.ageLabel}`)
+    browse.push('cliquer pour zoomer')
+    return browse.join(' — ')
+  }
   const parts = [marker.name, marker.priceLabel]
   if (marker.isRecommended) parts.push('station recommandée')
   if (marker.isReference) parts.push('station de référence')
@@ -463,8 +536,8 @@ function syncMarkers() {
   if (!map || !leaflet) return
   const zoom = map.getZoom()
   const radius = clusterRadiusKmForZoom(zoom)
-  const clustered = buildStationClusters(view.value.markers, radius)
-  const byId = new Map(view.value.markers.map((m) => [m.id, m]))
+  const clustered = buildStationClusters(allMarkers.value, radius)
+  const byId = new Map(allMarkers.value.map((m) => [m.id, m]))
 
   // Marqueurs individuels : les stations hors de tout cluster PLUS les
   // points d'ancrage (référence / recommandée), qui ne sont jamais
@@ -484,12 +557,22 @@ function syncMarkers() {
           alt: accessibleName(marker),
           zIndexOffset: marker.isRecommended ? 2000 : marker.isReference ? 1000 : 0
         })
-        .bindPopup(buildPopupHtml(marker), { maxWidth: 260, autoPan: true, closeButton: true })
         .on('click', () => {
           if (map) {
             map.flyTo([marker.lat, marker.lon], Math.max(map.getZoom(), 14))
           }
         })
+      // Popup seulement pour les marqueurs de recherche : un marqueur
+      // d'exploration n'a ni nom ni distance, donc rien d'honnête à afficher.
+      // Son clic zoome, et la recherche par rayon fournit alors la version
+      // complète (ticket 039).
+      if (!marker.isBrowse) {
+        layer.bindPopup(buildPopupHtml(marker), {
+          maxWidth: 260,
+          autoPan: true,
+          closeButton: true
+        })
+      }
       layer.addTo(map)
       markerLayers.set(id, layer)
     }
@@ -503,7 +586,7 @@ function syncMarkers() {
       layer.setZIndexOffset(marker.isRecommended ? 2000 : marker.isReference ? 1000 : 0)
       // Le contenu de la popup doit suivre l'état (prix / fraîcheur) : la
       // réouvrir si elle était ouverte sur ce marqueur.
-      if (layer.isPopupOpen()) {
+      if (!marker.isBrowse && layer.isPopupOpen()) {
         layer.setPopupContent(buildPopupHtml(marker))
       }
       layer.options.title = accessibleName(marker)
@@ -527,6 +610,7 @@ function syncMarkers() {
 
 onBeforeUnmount(() => {
   cancelRecenter()
+  cancelBounds()
   resizeObserver?.disconnect()
   resizeObserver = null
   if (map) {

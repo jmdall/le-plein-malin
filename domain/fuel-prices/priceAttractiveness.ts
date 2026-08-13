@@ -53,3 +53,54 @@ export function computePriceAttractiveness(input: {
   const ratio = Math.min(1, Math.max(0, (max - input.price) / width))
   return ratio
 }
+
+// ——— Échelle sur la distribution VISIBLE (ticket 039) ———
+// En exploration libre de la carte il n'y a pas de station de référence : la
+// couleur d'un marqueur se situe par rapport aux prix actuellement AFFICHÉS.
+//
+// Conséquence assumée du choix produit : une même station change de couleur
+// quand on déplace la carte. La légende doit donc parler des « stations
+// visibles » — sinon la couleur devient impossible à interpréter.
+//
+// Déciles (p10 → p90) et non min/max : une seule station aberrante écraserait
+// tout le dégradé sur une extrémité et rendrait la carte illisible.
+export const VISIBLE_SCALE_LOW_PERCENTILE = 0.1
+export const VISIBLE_SCALE_HIGH_PERCENTILE = 0.9
+
+export interface VisiblePriceScale {
+  /** Bas de l'échelle : attractivité 1 (le plus vert). */
+  low: number
+  /** Haut de l'échelle : attractivité 0. */
+  high: number
+}
+
+function percentile(sorted: number[], ratio: number): number {
+  if (sorted.length === 1) return sorted[0]!
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * ratio)))
+  return sorted[index]!
+}
+
+// null quand aucun prix exploitable : on n'invente pas une échelle, donc pas de
+// couleur (le marqueur reste neutre).
+export function computeVisiblePriceScale(prices: number[]): VisiblePriceScale | null {
+  const usable = prices.filter((p) => Number.isFinite(p)).sort((a, b) => a - b)
+  if (usable.length === 0) return null
+  return {
+    low: percentile(usable, VISIBLE_SCALE_LOW_PERCENTILE),
+    high: percentile(usable, VISIBLE_SCALE_HIGH_PERCENTILE)
+  }
+}
+
+// Même convention que computePriceAttractiveness : 1 = moins cher (vert),
+// 0 = plus cher. Saturé hors échelle, jamais hors [0, 1].
+export function computeAttractivenessInScale(
+  price: number,
+  scale: VisiblePriceScale
+): number | null {
+  if (!Number.isFinite(price)) return null
+  const width = scale.high - scale.low
+  // Échelle dégénérée (tous les prix visibles identiques) : milieu neutre —
+  // aucune station n'est « moins chère » qu'une autre.
+  if (width <= 0) return 0.5
+  return Math.min(1, Math.max(0, (scale.high - price) / width))
+}
