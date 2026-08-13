@@ -199,8 +199,9 @@ test('la saisie libre garde le géocodage serveur (q / postalCode)', async ({ pa
 })
 
 // Le BAN couvre l'outre-mer, l'API interne borne lat/lon à la France
-// métropolitaine (shared/geo.ts). Une suggestion outre-mer doit retomber sur le
-// géocodage serveur — pas produire une erreur 400 sur une recherche qui
+// métropolitaine (domain/fuel-prices/searchBounds.ts). Une suggestion outre-mer
+// doit retomber sur le géocodage serveur — pas produire une erreur 400 sur une
+// recherche qui
 // fonctionnait avant le ticket 031.
 test('une suggestion hors bornes API retombe sur le géocodage serveur', async ({ page }) => {
   const recoCalls: string[] = []

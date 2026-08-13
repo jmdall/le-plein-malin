@@ -4,7 +4,7 @@
 // Aucune règle métier ici : uniquement la forme des requêtes.
 import { z } from 'zod'
 import { FUEL_TYPES } from '../../domain/fuel-prices/types'
-import { FRANCE_BOUNDS } from '../../shared/geo'
+import { FRANCE_BOUNDS } from '../../domain/fuel-prices/searchBounds'
 
 // ——— Helpers de message d'erreur (Zod v4 : options `{ error }`) ———
 function numError(msg: string) {
@@ -13,8 +13,8 @@ function numError(msg: string) {
 
 // Coordonnées bornées : territoire français métropolitain (CORINE) + marge
 // (spec §14 #14 : coordonnées hors France → rejetées). Les bornes vivent dans
-// shared/geo.ts : le client les applique aussi, pour ne jamais envoyer une
-// coordonnée que cette validation refuserait (ticket 031).
+// domain/fuel-prices/searchBounds.ts : le client les applique aussi, pour ne
+// jamais envoyer une coordonnée que cette validation refuserait (ticket 031).
 const { minLat, maxLat, minLon, maxLon } = FRANCE_BOUNDS
 const LAT_RANGE = `lat hors bornes (${minLat}..${maxLat})`
 const LON_RANGE = `lon hors bornes (${minLon}..${maxLon})`

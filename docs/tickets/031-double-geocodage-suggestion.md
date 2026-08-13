@@ -133,7 +133,8 @@ Correctif : la requête porte la provenance des coordonnées.
 Réunion ou en Guadeloupe passait le filtre client (bornes terrestres) et se
 faisait **rejeter en 400** — alors que l'ancien chemin par texte fonctionnait.
 
-Correctif : `shared/geo.ts` porte les bornes une seule fois, consommées par le
+Correctif : `domain/fuel-prices/searchBounds.ts` porte les bornes une seule
+fois (d'abord placé dans `shared/`, déplacé ensuite — voir ticket 035), consommées par le
 schéma Zod **et** par `resolveSearchInput`. Hors bornes ⇒ repli sur le texte,
 donc exactement le comportement d'avant le ticket. Deux questions distinctes,
 deux gardes, aucune duplication :

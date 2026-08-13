@@ -3,7 +3,7 @@
 // (LOC-1) et le dernier lieu de recherche (LOC-2) sont mémorisés localement.
 // La position précise n'est jamais persistée (LOC-4, NFR-SEC-4) : on ne garde
 // que le consentement et la ville/CP saisie.
-import { isSearchablePosition } from '../../shared/geo'
+import { isSearchablePosition } from '../../domain/fuel-prices/searchBounds'
 import { storageGet, storageSet, storageRemove, STORAGE_KEYS } from './storage'
 import type { RecommendationRequest } from './recommendation'
 
@@ -56,9 +56,10 @@ export function clearSavedLocation(): void {
 // Deux replis sur le texte, tous deux vers le comportement d'origine
 // (5 chiffres → postalCode, sinon q) :
 //   - aucune position (saisie libre, rejeu de la dernière recherche) ;
-//   - position hors des bornes acceptées par l'API (shared/geo.ts). Le BAN
-//     couvre l'outre-mer, l'API non : envoyer ces coordonnées transformerait
-//     une recherche qui marchait en erreur 400.
+//   - position hors des bornes acceptées par l'API
+//     (domain/fuel-prices/searchBounds.ts). Le BAN couvre l'outre-mer, l'API
+//     non : envoyer ces coordonnées transformerait une recherche qui marchait
+//     en erreur 400.
 export type SearchTarget = Pick<RecommendationRequest, 'lat' | 'lon' | 'positionSource'> &
   Pick<RecommendationRequest, 'postalCode' | 'q'>
 

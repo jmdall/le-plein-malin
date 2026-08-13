@@ -19,8 +19,8 @@
 // ne re-filtre pas sur la distance routière — un rayon est une zone, pas un
 // budget de trajet (ADR-0005, « Conséquences »).
 import { haversineKm } from '../../domain/fuel-prices/haversine'
-import type { StationPrice } from '../../domain/fuel-prices/types'
-import type { LatLon, RouteDistanceProvider } from '../providers/routeDistance'
+import type { GeoPoint, StationPrice } from '../../domain/fuel-prices/types'
+import type { RouteDistanceProvider } from '../providers/routeDistance'
 import type { StationWithDistance } from './station-mapping'
 
 // Quelle mesure a réellement servi. Transmis au module pur (`detourSource`)
@@ -37,7 +37,7 @@ function isUsableKm(value: unknown): value is number {
 }
 
 export async function resolveStationDistances(options: {
-  center: LatLon
+  center: GeoPoint
   stations: StationPrice[]
   route?: RouteDistanceProvider
 }): Promise<ResolvedStationDistances> {

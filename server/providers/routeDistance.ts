@@ -10,6 +10,7 @@
 //
 // Ce module ne décide RIEN du métier : il mesure. Le repli sur haversine et le
 // choix de la mesure annoncée vivent dans server/lib/station-distances.ts.
+import type { GeoPoint } from '../../domain/fuel-prices/types'
 import type { Db } from '../db/client'
 
 export const OSRM_BASE_URL = 'https://router.project-osrm.org'
@@ -29,17 +30,12 @@ export const ROUTE_CACHE_TTL_MS = 30 * 24 * 3_600_000
 // partagent le cache.
 const CACHE_PRECISION = 3
 
-export interface LatLon {
-  lat: number
-  lon: number
-}
-
 // Seam (ADR-0005). Une seule méthode : la matrice depuis une origine.
 // Retourne les km DANS L'ORDRE des destinations, `null` pour une destination
 // sans route connue. Lève si l'appel entier échoue — l'appelant replie.
 export interface RouteDistanceProvider {
   readonly name: string
-  tableFromOrigin(origin: LatLon, destinations: LatLon[]): Promise<Array<number | null>>
+  tableFromOrigin(origin: GeoPoint, destinations: GeoPoint[]): Promise<Array<number | null>>
 }
 
 export type FetchLike = typeof fetch
@@ -55,8 +51,8 @@ export interface OsrmOptions {
 // source en premier, et `annotations=distance` — sans quoi il renvoie des
 // DURÉES et non des distances.
 export function buildOsrmTableUrl(
-  origin: LatLon,
-  destinations: LatLon[],
+  origin: GeoPoint,
+  destinations: GeoPoint[],
   baseUrl = OSRM_BASE_URL
 ): string {
   const coords = [origin, ...destinations].map((p) => `${p.lon},${p.lat}`).join(';')
@@ -113,7 +109,7 @@ function round(value: number): string {
 }
 
 // Clé non symétrique : aller et retour peuvent différer (sens uniques).
-export function routeCacheKey(origin: LatLon, destination: LatLon): string {
+export function routeCacheKey(origin: GeoPoint, destination: GeoPoint): string {
   return `${round(origin.lat)},${round(origin.lon)}|${round(destination.lat)},${round(destination.lon)}`
 }
 
