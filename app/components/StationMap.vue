@@ -535,7 +535,9 @@ function iconSignature(marker: StationMapMarker): string {
 function syncMarkers() {
   if (!map || !leaflet) return
   const zoom = map.getZoom()
-  const radius = clusterRadiusKmForZoom(zoom)
+  // Latitude du centre : l'échelle Web Mercator en dépend (un pixel couvre plus
+  // de terrain à l'équateur qu'au nord). Le seuil reste constant en PIXELS.
+  const radius = clusterRadiusKmForZoom(zoom, map.getCenter().lat)
   const clustered = buildStationClusters(allMarkers.value, radius)
   const byId = new Map(allMarkers.value.map((m) => [m.id, m]))
 

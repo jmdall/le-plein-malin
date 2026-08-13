@@ -228,13 +228,18 @@ test('la carte se monte après une recherche avec mock API /api/stations', async
   await expect(page.locator('.jflp-cluster-marker')).toHaveCount(1)
   await expect(page.locator('.jflp-cluster')).toHaveText('3')
 
-  // Clustering dynamique selon le zoom : en zoomant (500 m d'écart, seuil
-  // 2 km au zoom 11 → 0,25 km au zoom 14), les stations de l'amas ne se
-  // chevauchent plus à l'écran → le cluster disparaît et les 3 marqueurs
-  // individuels réapparaissent (choix produit : regroupement uniquement
-  // quand les marqueurs se chevauchent).
+  // Clustering dynamique selon le zoom : en zoomant assez, les stations de
+  // l'amas (500 m d'écart) ne se chevauchent plus à l'écran → le cluster
+  // disparaît et les 3 marqueurs individuels réapparaissent (choix produit :
+  // regroupement uniquement quand les marqueurs se chevauchent).
+  //
+  // Quatre crans et non trois depuis le ticket 040 : le seuil vaut désormais
+  // 100 px (largeur d'un badge prix) au lieu de 38 px. Au zoom 14, 500 m ne
+  // représentent que ~76 px — les badges se chevauchent ENCORE, donc le cluster
+  // doit tenir. Au zoom 15 ils sont à ~152 px : séparés pour de bon. L'ancienne
+  // calibration les séparait dès le zoom 14, alors qu'ils se recouvraient.
   const zoomer = page.getByRole('button', { name: 'Zoomer', exact: true })
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 4; i++) {
     await zoomer.click()
     await page.waitForTimeout(400)
   }

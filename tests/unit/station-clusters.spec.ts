@@ -13,12 +13,17 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildStationClusters,
-  CLUSTER_BASE_RADIUS_KM,
-  CLUSTER_BASE_ZOOM,
-  clusterRadiusKmForZoom
+  CLUSTER_MERGE_PIXELS,
+  PRICE_BADGE_WIDTH_PX,
+  clusterRadiusKmForZoom,
+  metresPerPixel
 } from '../../app/utils/stationClusters'
 import type { StationMapMarker } from '../../app/utils/stationMap'
 import { haversineKm } from '../../domain/fuel-prices/haversine'
+
+// Rayon de fusion utilisé par les tests de comportement ci-dessous : une valeur
+// fixe et lisible (2 km), indépendante de la calibration écran du ticket 040.
+const MERGE_KM = 2
 
 function marker(
   id: string,
@@ -55,17 +60,55 @@ function alongLat(baseLat: number, km: number): number {
   return baseLat + km / 111.19
 }
 
-describe('clusterRadiusKmForZoom (seuil dynamique selon le zoom)', () => {
-  it('divise le rayon par 2 à chaque niveau de zoom supplémentaire', () => {
-    expect(clusterRadiusKmForZoom(CLUSTER_BASE_ZOOM)).toBe(CLUSTER_BASE_RADIUS_KM)
-    expect(clusterRadiusKmForZoom(CLUSTER_BASE_ZOOM + 1)).toBeCloseTo(CLUSTER_BASE_RADIUS_KM / 2, 10)
-    expect(clusterRadiusKmForZoom(CLUSTER_BASE_ZOOM - 1)).toBeCloseTo(CLUSTER_BASE_RADIUS_KM * 2, 10)
+// ——— Ticket 040 : le seuil est une largeur À L'ÉCRAN ———
+// L'ancienne formule (« 2 km au zoom 11 », halvée par zoom) donnait un rayon de
+// fusion de 38 px à tous les zooms, alors qu'un badge prix fait ~90 px : deux
+// marqueurs à 38 px étaient jugés « sans chevauchement » pendant que leurs badges
+// se recouvraient de moitié. Ces tests verrouillent l'intention.
+describe('clusterRadiusKmForZoom — calibration écran (ticket 040)', () => {
+  const LAT = 46.5
+
+  it('le rayon de fusion vaut CLUSTER_MERGE_PIXELS à TOUS les zooms', () => {
+    for (const zoom of [6, 8, 10, 11, 13, 15, 18]) {
+      const km = clusterRadiusKmForZoom(zoom, LAT)
+      const px = (km * 1000) / metresPerPixel(zoom, LAT)
+      expect(px, `zoom ${zoom}`).toBeCloseTo(CLUSTER_MERGE_PIXELS, 6)
+    }
+  })
+
+  // La garde qui empêche le défaut de revenir : si le seuil redescendait sous la
+  // largeur d'un badge, les badges se chevaucheraient de nouveau.
+  it('le seuil couvre au moins la largeur d’un badge prix', () => {
+    expect(CLUSTER_MERGE_PIXELS).toBeGreaterThanOrEqual(PRICE_BADGE_WIDTH_PX)
+  })
+
+  it('l’ancienne calibration (38 px) est bien derrière nous', () => {
+    const km = clusterRadiusKmForZoom(11, LAT)
+    const px = (km * 1000) / metresPerPixel(11, LAT)
+    expect(px).toBeGreaterThan(38 * 1.5)
+  })
+
+  it('le rayon double quand on dézoome d’un cran', () => {
+    expect(clusterRadiusKmForZoom(10, LAT)).toBeCloseTo(clusterRadiusKmForZoom(11, LAT) * 2, 10)
+    expect(clusterRadiusKmForZoom(12, LAT)).toBeCloseTo(clusterRadiusKmForZoom(11, LAT) / 2, 10)
+  })
+
+  // Un pixel couvre moins de terrain au nord qu'au sud : à zoom égal, le rayon
+  // en km doit donc être plus petit à Dunkerque qu'à Perpignan.
+  it('tient compte de la latitude', () => {
+    const nord = clusterRadiusKmForZoom(11, 51)
+    const sud = clusterRadiusKmForZoom(11, 42)
+    expect(nord).toBeLessThan(sud)
+  })
+
+  it('la latitude par défaut est le centre de la France', () => {
+    expect(clusterRadiusKmForZoom(11)).toBeCloseTo(clusterRadiusKmForZoom(11, 46.5), 10)
   })
 })
 
 describe('buildStationClusters (clustering des marqueurs superposés)', () => {
   it('laisse un marqueur isolé non groupé', () => {
-    const view = buildStationClusters([marker('a', 48.85, 2.35)], CLUSTER_BASE_RADIUS_KM)
+    const view = buildStationClusters([marker('a', 48.85, 2.35)], MERGE_KM)
     expect(view.clusters).toHaveLength(0)
     expect(view.individuals).toEqual(['a'])
   })
@@ -77,7 +120,7 @@ describe('buildStationClusters (clustering des marqueurs superposés)', () => {
         marker('b', 48.8515, 2.3515),
         marker('c', 48.88, 2.37)
       ],
-      CLUSTER_BASE_RADIUS_KM
+      MERGE_KM
     )
     expect(view.clusters).toHaveLength(1)
     expect(view.individuals).toEqual(['c'])
@@ -97,7 +140,7 @@ describe('buildStationClusters (clustering des marqueurs superposés)', () => {
     const c = { lat: alongLat(centroid, 1.05), lon: 2.35 }
     const view = buildStationClusters(
       [marker('a', a.lat, a.lon), marker('b', b.lat, b.lon), marker('c', c.lat, c.lon)],
-      CLUSTER_BASE_RADIUS_KM
+      MERGE_KM
     )
     expect(view.clusters).toHaveLength(1)
     expect(view.clusters[0]!.markerIds.sort()).toEqual(['a', 'b', 'c'])
@@ -111,7 +154,7 @@ describe('buildStationClusters (clustering des marqueurs superposés)', () => {
         marker('c', 48.9, 2.5),
         marker('d', 48.9015, 2.5015)
       ],
-      CLUSTER_BASE_RADIUS_KM
+      MERGE_KM
     )
     expect(view.clusters).toHaveLength(2)
     const groups = view.clusters.map((c) => [...c.markerIds].sort()).sort()
@@ -128,7 +171,7 @@ describe('buildStationClusters (clustering des marqueurs superposés)', () => {
     reco.isRecommended = true
     const a = marker('a', 48.852, 2.352)
     const b = marker('b', 48.853, 2.353)
-    const view = buildStationClusters([ref, reco, a, b], CLUSTER_BASE_RADIUS_KM)
+    const view = buildStationClusters([ref, reco, a, b], MERGE_KM)
     // a et b (tout proches l'un de l'autre) sont groupés ; ref et reco
     // restent individuelles même si elles sont dans le même amas : leur
     // badge est le point d'ancrage de l'écran, jamais enfoui dans un
@@ -139,7 +182,7 @@ describe('buildStationClusters (clustering des marqueurs superposés)', () => {
   })
 
   it('sans marqueur → aucun cluster', () => {
-    const view = buildStationClusters([], CLUSTER_BASE_RADIUS_KM)
+    const view = buildStationClusters([], MERGE_KM)
     expect(view.clusters).toHaveLength(0)
     expect(view.individuals).toEqual([])
   })
@@ -151,7 +194,7 @@ describe('buildStationClusters (clustering des marqueurs superposés)', () => {
     mid.attractiveness = 0.3
     const pricey = marker('c', 48.852, 2.352)
     pricey.attractiveness = 0.15
-    const view = buildStationClusters([cheap, mid, pricey], CLUSTER_BASE_RADIUS_KM)
+    const view = buildStationClusters([cheap, mid, pricey], MERGE_KM)
     expect(view.clusters).toHaveLength(1)
     // Le disque suit le MEILLEUR prix du groupe (le plus « vert »).
     expect(view.clusters[0]!.attractiveness).toBeCloseTo(0.9, 6)
@@ -162,7 +205,7 @@ describe('buildStationClusters (clustering des marqueurs superposés)', () => {
     known.attractiveness = 0.8
     const unknown = marker('b', 48.8515, 2.3515)
     unknown.attractiveness = null
-    const view = buildStationClusters([known, unknown], CLUSTER_BASE_RADIUS_KM)
+    const view = buildStationClusters([known, unknown], MERGE_KM)
     expect(view.clusters).toHaveLength(1)
     expect(view.clusters[0]!.attractiveness).toBeCloseTo(0.8, 6)
   })
@@ -170,7 +213,7 @@ describe('buildStationClusters (clustering des marqueurs superposés)', () => {
   it('sans aucune attractivité connue → cluster neutre (null)', () => {
     const a = marker('a', 48.85, 2.35)
     const b = marker('b', 48.8515, 2.3515)
-    const view = buildStationClusters([a, b], CLUSTER_BASE_RADIUS_KM)
+    const view = buildStationClusters([a, b], MERGE_KM)
     expect(view.clusters).toHaveLength(1)
     expect(view.clusters[0]!.attractiveness).toBeNull()
   })

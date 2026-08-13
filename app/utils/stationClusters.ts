@@ -17,18 +17,49 @@
 import { haversineKm } from '../../domain/fuel-prices/haversine'
 import type { StationMapMarker } from './stationMap'
 
-// ——— Seuil d'agrégation dynamique selon le zoom ———
-// Le zoom ne change pas la résolution de la carte, il change la distance au
-// sol représentée par un pixel : à zoom n+1, tout est 2× plus grand à l'écran.
-// Pour que les clusters regroupent exactement ce qui SE CHEVAUCHE à l'écran,
-// le rayon de fusion doit être divisé par 2 à chaque zoom supplémentaire, et
-// multiplié par 2 en dézoomant. Base : 2 km au zoom 11 (le zoom d'ouverture
-// de la carte, MAP_START_ZOOM).
-export const CLUSTER_BASE_RADIUS_KM = 2
-export const CLUSTER_BASE_ZOOM = 11
+// ——— Seuil d'agrégation : exprimé en PIXELS (ticket 040) ———
+// L'objectif est de regrouper ce qui SE CHEVAUCHE À L'ÉCRAN. La grandeur qui
+// décide est donc une largeur en pixels, pas une distance au sol.
+//
+// L'ancienne formule partait de « 2 km au zoom 11 » et halvait par zoom.
+// Arithmétiquement, cela donnait un rayon de fusion de **38 px à tous les
+// zooms** — alors qu'un disque de cluster fait déjà 44 px et un badge prix avec
+// logo ~80-90 px. Deux marqueurs à 38 px étaient donc déclarés « sans
+// chevauchement » pendant que leurs badges se recouvraient de moitié. Mesuré sur
+// les 9 483 stations Gazole de la base, viewport 1280×800 centré Paris : 198
+// objets à l'écran au zoom 11, contre 49 avec la calibration correcte.
+//
+// Exprimer le seuil en pixels rend l'intention lisible, vérifiable contre le CSS,
+// et supprime le couplage caché au zoom d'ouverture (MAP_START_ZOOM).
 
-export function clusterRadiusKmForZoom(zoom: number): number {
-  return CLUSTER_BASE_RADIUS_KM * 2 ** (CLUSTER_BASE_ZOOM - zoom)
+// Largeur d'un badge prix avec pastille d'enseigne, mesurée sur le CSS de
+// StationMap.vue (font 0,78rem, ~5 caractères, pastille, padding 0,6rem × 2).
+export const PRICE_BADGE_WIDTH_PX = 90
+
+// Seuil retenu : la largeur d'un badge, plus une petite marge de respiration.
+// Plus grand regrouperait des badges qui ne se chevauchent pas vraiment et
+// forcerait à zoomer pour rien.
+export const CLUSTER_MERGE_PIXELS = 100
+
+// Latitude de référence par défaut : centre de la France métropolitaine. Un
+// degré de longitude — donc l'échelle Web Mercator — dépend de la latitude ;
+// l'appelant passe celle du centre de la carte quand il la connaît.
+export const CLUSTER_REFERENCE_LATITUDE = 46.5
+
+// Résolution Web Mercator pour des tuiles de 256 px.
+const EQUATOR_METRES_PER_PIXEL_AT_ZOOM_0 = 156543.03392
+
+export function metresPerPixel(zoom: number, latitude: number): number {
+  return (
+    (EQUATOR_METRES_PER_PIXEL_AT_ZOOM_0 * Math.cos((latitude * Math.PI) / 180)) / 2 ** zoom
+  )
+}
+
+export function clusterRadiusKmForZoom(
+  zoom: number,
+  latitude: number = CLUSTER_REFERENCE_LATITUDE
+): number {
+  return (CLUSTER_MERGE_PIXELS * metresPerPixel(zoom, latitude)) / 1000
 }
 
 export interface StationCluster {
