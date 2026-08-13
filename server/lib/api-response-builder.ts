@@ -5,7 +5,6 @@
 // propre ici : l'assemblage des réponses, la référence est la plus proche du
 // centre (ADR-0002/D2), le détour est calculé par le module pur
 // domain/fuel-prices/detour (D2, ADR-0002).
-import { haversineKm } from '../../domain/fuel-prices/haversine'
 import { computeDetourKm } from '../../domain/fuel-prices/detour'
 import { computeFreshness } from '../../domain/fuel-prices/freshness'
 import { computeCandidateEconomics } from '../../domain/fuel-prices/economics'
@@ -32,6 +31,8 @@ import {
   type StationWithDistance
 } from './station-mapping'
 import { buildRecommendationInput } from './recommendation-input'
+import { resolveStationDistances } from './station-distances'
+import type { RouteDistanceProvider } from '../providers/routeDistance'
 
 // ——— Réponse /api/stations ———
 export interface StationsResponse {
@@ -105,6 +106,7 @@ export async function buildStationsResponse(options: {
   query: StationsQuery
   center: ResolvedCenter
   db?: Db
+  route?: RouteDistanceProvider
 }): Promise<StationsResponse> {
   const { provider, query } = options
   const center = options.center
@@ -119,10 +121,11 @@ export async function buildStationsResponse(options: {
   const stations: StationPrice[] = options.db
     ? await enrichStationsWithDbIdentity(options.db, result.stations)
     : result.stations
-  const withDistance = stations.map((s) => ({
-    ...s,
-    distanceKm: haversineKm({ lat: center.lat, lon: center.lon }, s.position)
-  }))
+  const { withDistance } = await resolveStationDistances({
+    center: { lat: center.lat, lon: center.lon },
+    stations,
+    route: options.route
+  })
 
   const reference = pickReferenceStation(withDistance)
   const referenceStation: StationPrice | null = reference
@@ -155,6 +158,7 @@ export async function buildStationsList(options: {
   query: StationsQuery
   center: ResolvedCenter
   db?: Db
+  route?: RouteDistanceProvider
   vehicle?: { consumption: number; currentLevel: number; tankCapacity: number }
   now?: () => Date
 }): Promise<StationsListResponse> {
@@ -176,10 +180,11 @@ export async function buildStationsList(options: {
   const stations: StationPrice[] = options.db
     ? await enrichStationsWithDbIdentity(options.db, result.stations)
     : result.stations
-  const withDistance = stations.map((s) => ({
-    ...s,
-    distanceKm: haversineKm({ lat: center.lat, lon: center.lon }, s.position)
-  }))
+  const { withDistance } = await resolveStationDistances({
+    center: { lat: center.lat, lon: center.lon },
+    stations,
+    route: options.route
+  })
 
   const reference = pickReferenceStation(withDistance)
   const refDistance = reference?.distanceKm ?? null
@@ -251,6 +256,7 @@ export async function buildRecommendationResponse(options: {
   query: StationsQuery
   center: ResolvedCenter
   vehicle: VehicleProfile
+  route?: RouteDistanceProvider
   now?: () => Date
 }): Promise<RecommendationResponse> {
   const { db, provider, query } = options
@@ -274,10 +280,11 @@ export async function buildRecommendationResponse(options: {
 
   // La tendance porte sur la station la plus proche du centre (référence).
   // On cherche d'abord la référence dans les stations du provider.
-  const withDistance = enriched.map((s) => ({
-    ...s,
-    distanceKm: haversineKm({ lat: center.lat, lon: center.lon }, s.position)
-  }))
+  const { withDistance, source: detourSource } = await resolveStationDistances({
+    center: { lat: center.lat, lon: center.lon },
+    stations: enriched,
+    route: options.route
+  })
   const ref = pickReferenceStation(withDistance)
 
   let trend: TrendSignal | undefined
@@ -303,6 +310,8 @@ export async function buildRecommendationResponse(options: {
     vehicle: options.vehicle,
     center,
     stations: enriched,
+    withDistance,
+    detourSource,
     now,
     trend
   })

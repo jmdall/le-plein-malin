@@ -6,6 +6,7 @@
 import { baseLocationSchema } from '../lib/validation'
 import { createDb } from '../db/client'
 import { createProviderChain } from '../providers/providerChain'
+import { createRouteDistanceProvider } from '../providers/routeDistance'
 import { createGeocodeProvider } from '../lib/geocode'
 import { createApiError, isApiError } from '../lib/api-errors'
 import { resolveCenter } from '../lib/station-mapping'
@@ -50,11 +51,14 @@ export default defineEventHandler(async (event) => {
     // 5. Orchestration enrichie (ticket 011) : haversine + référence + STA-1.
     //    L'identité réelle (nom/enseigne/logo, 019/020) est réinjectée depuis
     //    la base : le client n'affiche jamais l'id (REC-2/D1).
+    // Distances routières (ticket 033, ADR-0005) : un seul appel OSRM par
+    // recherche, caché, avec repli haversine — jamais bloquant.
     const response = await buildStationsList({
       provider,
       query: parsed.data,
       center,
       db,
+      route: createRouteDistanceProvider(db),
       vehicle
     })
 

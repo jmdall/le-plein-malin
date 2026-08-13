@@ -6,6 +6,7 @@
 import { recommendationQuerySchema } from '../lib/validation'
 import { createDb } from '../db/client'
 import { createProviderChain } from '../providers/providerChain'
+import { createRouteDistanceProvider } from '../providers/routeDistance'
 import { createGeocodeProvider } from '../lib/geocode'
 import { createApiError, isApiError } from '../lib/api-errors'
 import { resolveCenter } from '../lib/station-mapping'
@@ -40,11 +41,15 @@ export default defineEventHandler(async (event) => {
     const center = await resolveCenter({ query: parsed.data, geocode })
 
     // 5. Orchestration : km pré-calculés + tendance locale injectés (005).
+    // Distances routières (ticket 033, ADR-0005) : le coût du détour est mesuré
+    // sur la route, pas en ligne droite. Repli haversine automatique, et
+    // l'hypothèse affichée dit quelle mesure a réellement servi.
     const response = await buildRecommendationResponse({
       db,
       provider,
       query: parsed.data,
       center,
+      route: createRouteDistanceProvider(db),
       vehicle
     })
 

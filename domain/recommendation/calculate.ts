@@ -132,9 +132,25 @@ export function calculateFuelRecommendation(input: FuelRecommendationInput): Fue
     ? ['Historique insuffisant : tendance probable non calculable, décision sur les prix courants.']
     : [TREND_PHRASES[input.trend?.direction ?? 'stable'] ?? TREND_PHRASES.stable!]
 
-  const assumptions = withoutGeo
-    ? ['Détour estimé en ligne droite, aller-retour, relatif à la station la plus proche (absence de géolocalisation).']
-    : []
+  // Hypothèse de détour (§8 : les hypothèses sont affichées). Deux axes
+  // INDÉPENDANTS (ticket 033, ADR-0005) :
+  //   - la mesure : réseau routier (OSRM) ou ligne droite (haversine) ;
+  //   - la position : connue (géoloc) ou non (ville/CP, lieu choisi, carte).
+  // Le module ne prétend jamais avoir routé quand il a reçu de la ligne droite :
+  // `detourSource` absent ⇒ ligne droite, donc comportement d'origine.
+  const roadDetour = input.detourSource === 'road'
+  const assumptions: string[] = []
+  if (roadDetour) {
+    assumptions.push(
+      withoutGeo
+        ? 'Détour estimé sur le réseau routier, aller-retour, relatif à la station la plus proche (position exacte inconnue).'
+        : 'Détour estimé sur le réseau routier, aller-retour, relatif à la station la plus proche.'
+    )
+  } else if (withoutGeo) {
+    assumptions.push(
+      'Détour estimé en ligne droite, aller-retour, relatif à la station la plus proche (absence de géolocalisation).'
+    )
+  }
 
   // Le meilleur candidat analysé (toutes les candidates éligibles), pour
   // l'explicabilité des recommandations wait/partial-fill.

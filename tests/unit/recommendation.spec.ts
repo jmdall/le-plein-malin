@@ -63,6 +63,7 @@ function makeInput(overrides: {
   threshold?: number
   trend?: { direction: 'down' | 'stable' | 'up' | 'insufficient'; magnitude: number }
   hasGeoLocation?: boolean
+  detourSource?: 'road' | 'straight-line'
 } = {}) {
   const reference = overrides.referenceStation ?? station({ id: 'ref', price: 1.95 })
   return {
@@ -74,6 +75,7 @@ function makeInput(overrides: {
     threshold: overrides.threshold ?? 1,
     trend: overrides.trend ?? { direction: 'stable' as const, magnitude: 0.02 },
     hasGeoLocation: overrides.hasGeoLocation ?? true,
+    detourSource: overrides.detourSource,
     now: NOW
   }
 }
@@ -356,6 +358,57 @@ describe('calculateFuelRecommendation (ticket 004, 18 scénarios §13)', () => {
       const r = calculateFuelRecommendation(makeInput({ hasGeoLocation: false }))
       expect(r.assumptions.join(' ')).toMatch(/aller-retour/i)
       expect(r.assumptions.join(' ')).toMatch(/ligne droite/i)
+      expect(r.isPartial).toBe(true)
+    })
+  })
+
+  // ——— Ticket 033 / ADR-0005 : l'hypothèse dit quelle mesure a servi ———
+  // Le module reste pur : il ne route rien, il reçoit des km et le nom de la
+  // mesure. Il ne doit jamais annoncer un routage qui n'a pas eu lieu.
+  describe('detourSource (ticket 033, ADR-0005)', () => {
+    it('défaut (absent) → hypothèse ligne droite : comportement d’origine', () => {
+      const r = calculateFuelRecommendation(makeInput({ hasGeoLocation: false }))
+      expect(r.assumptions.join(' ')).toMatch(/ligne droite/i)
+      expect(r.assumptions.join(' ')).not.toMatch(/réseau routier/i)
+    })
+
+    it('road → l’hypothèse parle du réseau routier, jamais de ligne droite', () => {
+      const r = calculateFuelRecommendation(
+        makeInput({ detourSource: 'road', hasGeoLocation: false })
+      )
+      expect(r.assumptions.join(' ')).toMatch(/réseau routier/i)
+      expect(r.assumptions.join(' ')).toMatch(/aller-retour/i)
+      expect(r.assumptions.join(' ')).not.toMatch(/ligne droite/i)
+    })
+
+    it('road + géolocalisé → hypothèse routière présente, sans réserve de position', () => {
+      const r = calculateFuelRecommendation(
+        makeInput({ detourSource: 'road', hasGeoLocation: true })
+      )
+      expect(r.assumptions.join(' ')).toMatch(/réseau routier/i)
+      expect(r.assumptions.join(' ')).not.toMatch(/position exacte/i)
+    })
+
+    it('road + sans géoloc → les DEUX réserves : mesure routière ET position inconnue', () => {
+      const r = calculateFuelRecommendation(
+        makeInput({ detourSource: 'road', hasGeoLocation: false })
+      )
+      expect(r.assumptions.join(' ')).toMatch(/position exacte inconnue/i)
+    })
+
+    it('straight-line + géolocalisé → aucune hypothèse (comportement d’origine)', () => {
+      const r = calculateFuelRecommendation(
+        makeInput({ detourSource: 'straight-line', hasGeoLocation: true })
+      )
+      expect(r.assumptions).toEqual([])
+    })
+
+    // Router juste ne dit pas où est l'utilisateur : les deux axes sont
+    // indépendants (ADR-0005, « Conséquences »).
+    it('un routage réussi ne rend PAS complète une recherche sans géolocalisation', () => {
+      const r = calculateFuelRecommendation(
+        makeInput({ detourSource: 'road', hasGeoLocation: false })
+      )
       expect(r.isPartial).toBe(true)
     })
   })

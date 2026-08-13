@@ -117,6 +117,9 @@ Sur Raspberry Pi (arm64 / Debian 11), Playwright utilise le chromium système
 | `DATABASE_PATH` | `./data/app.db` | Fichier SQLite |
 | `SYNC_INTERVAL_HOURS` | `2` | Fréquence du job de synchronisation |
 | `FUEL_PRICES_PROVIDER` | `opendatasoft` | Fournisseur principal des prix |
+| `ROUTE_DISTANCE_PROVIDER` | `osrm` | Distances routières (`none` = haversine seul) |
+| `OSRM_BASE_URL` | `https://router.project-osrm.org` | Instance OSRM (auto-hébergeable) |
+| `OSRM_TIMEOUT_MS` | `2500` | Timeout du routage avant repli haversine |
 | `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` | — | OpenCode uniquement (dev) |
 
 ## Source des données
@@ -153,8 +156,11 @@ coût du détour  = distance supplémentaire A/R × conso / 100 × prix candidat
 aller à une autre station  ⇔  économie nette ≥ seuil (défaut 1 €)
 ```
 
-Le serveur calcule les distances (haversine pure), choisit la station de
-référence (la plus proche) et injecte des kilomètres déjà calculés ; la
+Le serveur mesure les distances **sur le réseau routier** (OSRM, un seul appel
+`/table` par recherche, caché en SQLite) avec **repli haversine** automatique
+(ADR-0005), choisit la station de référence (la plus proche) et injecte des
+kilomètres déjà calculés — le module pur ne voit jamais de géométrie. L'hypothèse
+affichée dit toujours quelle mesure a réellement servi. La
 tendance (`domain/trend/`) est déterministe (moyenne, médiane, variations,
 pondération par ancienneté). Les formulations restent probabilistes
 (« tendance probable », « selon les données récentes »).
@@ -166,9 +172,13 @@ pondération par ancienneté). Les formulations restent probabilistes
   jours suffisent).
 - **Enseigne** : non publiée dans le flux officiel — affichée « si disponible »
   (souvent absente).
-- **Détour** : estimé en ligne droite (haversine) aller-retour, pas de routage
-  routier (aucun service payant) — hypothèse affichée à l'utilisateur.
-- **Géocodage** : Nominatim/OSM (gratuit, limité) avec cache SQLite.
+- **Détour** : mesuré sur la route (OSRM public, gratuit et sans clé), avec
+  repli en ligne droite si le routage échoue — l'hypothèse affichée précise
+  laquelle des deux a servi. Le **rayon** de recherche reste, lui, un cercle
+  géographique (haversine) : ce n'est pas un budget de trajet.
+- **Géocodage** : API Adresse de l'État (BAN) et Nominatim/OSM, avec cache
+  SQLite. Un lieu choisi dans les suggestions fournit son centre : aucun
+  second géocodage.
 - **Favoris** : stockés localement (localStorage) ; la table serveur existe
   pour une évolution multi-appareils.
 
@@ -177,7 +187,7 @@ pondération par ancienneté). Les formulations restent probabilistes
 - `docs/specs/spec.md` — spécification complète
 - `docs/specs/grill-decisions.md` — décisions bloquantes (D1–D6)
 - `docs/research/fuel-data-source.md` — source officielle vérifiée
-- `docs/adr/` — décisions d'architecture (0001–0004)
+- `docs/adr/` — décisions d'architecture (0001–0005)
 - `docs/tickets/` — tickets (001–022)
 - `CONTEXT.md` — vocabulaire métier
 - `PLAN.md` — plan d'exécution

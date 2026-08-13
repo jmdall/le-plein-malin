@@ -13,6 +13,7 @@ import type {
   TrendSignal
 } from '../../domain/stations/types'
 import type { ResolvedCenter } from './validation'
+import type { DistanceSource } from './station-distances'
 import {
   pickReferenceStation,
   toStationPriceWithDistance,
@@ -28,15 +29,23 @@ export function buildRecommendationInput(options: {
   quantityToBuy?: number
   now: Date
   trend?: TrendSignal
+  // Distances déjà résolues par server/lib/station-distances (ticket 033) :
+  // routières quand disponibles, haversine sinon. Absentes ⇒ haversine ici, ce
+  // qui garde cette fonction utilisable seule (et testable sans provider).
+  withDistance?: StationWithDistance[]
+  detourSource?: DistanceSource
 }): FuelRecommendationInput {
   const { fuelType, vehicle, center, stations, now } = options
   const threshold = options.threshold ?? vehicle.savingsThreshold
 
-  // Distances au centre (haversine côté serveur, D3).
-  const withDistance = stations.map((s) => ({
-    ...s,
-    distanceKm: haversineKm({ lat: center.lat, lon: center.lon }, s.position)
-  }))
+  // Distances au centre : fournies par le seam de résolution, ou haversine
+  // (D3/ADR-0005 — le module pur ne voit que des km, jamais de géométrie).
+  const withDistance =
+    options.withDistance ??
+    stations.map((s) => ({
+      ...s,
+      distanceKm: haversineKm({ lat: center.lat, lon: center.lon }, s.position)
+    }))
 
   const ref = pickReferenceStation(withDistance)
   if (!ref) {
@@ -65,7 +74,8 @@ export function buildRecommendationInput(options: {
       threshold,
       now,
       trend: options.trend,
-      hasGeoLocation: center.mode === 'geo'
+      hasGeoLocation: center.mode === 'geo',
+      detourSource: options.detourSource
     }
   }
 
@@ -93,6 +103,7 @@ export function buildRecommendationInput(options: {
     threshold,
     now,
     trend: options.trend,
-    hasGeoLocation: center.mode === 'geo'
+    hasGeoLocation: center.mode === 'geo',
+    detourSource: options.detourSource
   }
 }
