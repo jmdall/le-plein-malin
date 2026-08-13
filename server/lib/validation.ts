@@ -206,6 +206,50 @@ export type ResolvedCenter =
   | { mode: 'place'; lat: number; lon: number }
   | { mode: 'query'; label: string; lat: number; lon: number }
 
+// ——— Query /api/map/stations : emprise (bounding box) ———
+// Question distincte de /api/stations : « qu'y a-t-il dans cette zone ? » et non
+// « où faire le plein ? ». Pas de rayon, pas de station de référence (ticket
+// 037). Les quatre coins passent par latSchema/lonSchema, donc l'emprise est
+// bornée à la France métropolitaine (spec §14 #14).
+//
+// Plafond de lignes : il ne peut pas se déclencher avec les données actuelles
+// (l'emprise étant bornée à la France, le maximum est la taille du jeu — 9 604
+// stations). C'est une garde pour le jour où l'une des deux hypothèses tombe, et
+// la réponse le signale (`truncated`) au lieu de tronquer en silence.
+export const MAP_MAX_STATIONS = 15_000
+
+export const mapBoundsSchema = z
+  .object(
+    {
+      swLat: latSchema,
+      swLon: lonSchema,
+      neLat: latSchema,
+      neLon: lonSchema,
+      fuel: fuelSchema.optional().default('Gazole')
+    },
+    { error: (issue) => ({ message: issue.message ?? 'Entrée invalide' }) }
+  )
+  .superRefine((value, ctx) => {
+    // Une emprise inversée ou dégénérée n'est pas une zone : c'est une erreur
+    // d'appel, pas une zone vide à servir.
+    if (value.swLat >= value.neLat) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['swLat'],
+        message: 'swLat doit être strictement inférieur à neLat'
+      })
+    }
+    if (value.swLon >= value.neLon) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['swLon'],
+        message: 'swLon doit être strictement inférieur à neLon'
+      })
+    }
+  })
+
+export type MapBoundsQuery = z.infer<typeof mapBoundsSchema>
+
 // ——— Query /api/stations/:id/history (fuel optionnel) ———
 export const historyQuerySchema = z.object(
   {
