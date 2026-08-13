@@ -229,6 +229,21 @@ describe('API — validation Zod (ticket 009)', () => {
     expect(baseLocationSchema.safeParse({}).success).toBe(false)
   })
 
+  // Ticket 031 : provenance des coordonnées. Le défaut reste « device » pour
+  // que la géolocalisation et le déplacement de carte gardent leur sens actuel.
+  it('positionSource : défaut device, accepte place, rejette le reste', () => {
+    const base = { lat: 48.86, lon: 2.34 }
+    const byDefault = baseLocationSchema.safeParse(base)
+    expect(byDefault.success).toBe(true)
+    expect(byDefault.data?.positionSource).toBe('device')
+
+    const place = baseLocationSchema.safeParse({ ...base, positionSource: 'place' })
+    expect(place.success).toBe(true)
+    expect(place.data?.positionSource).toBe('place')
+
+    expect(baseLocationSchema.safeParse({ ...base, positionSource: 'gps' }).success).toBe(false)
+  })
+
   it('rejette lat sans lon (incomplets) → 400', () => {
     expect(baseLocationSchema.safeParse({ lat: 48.86 }).success).toBe(false)
   })
@@ -301,6 +316,31 @@ describe('API — géocodage ville/CP (ticket 009, NFR-SEC-3)', () => {
   it('resolveCenter : lat/lon → mode geo sans appel externe', async () => {
     const center = await resolveCenter({
       query: { lat: 48.86, lon: 2.34 },
+      geocode: async () => {
+        throw new Error('ne doit pas être appelé')
+      }
+    })
+    expect(center).toEqual({ mode: 'geo', lat: 48.86, lon: 2.34 })
+  })
+
+  // ——— Ticket 031 : provenance des coordonnées ———
+  // Un lieu choisi dans l'autocomplete envoie lat/lon, mais ce n'est PAS la
+  // position de l'appareil : le centroïde d'une commune ne justifie pas de
+  // retirer l'hypothèse « détour estimé en ligne droite ». D'où un mode
+  // distinct, que hasGeoLocation ne compte pas comme une géolocalisation.
+  it('resolveCenter : lat/lon + positionSource=place → mode place, sans géocodage', async () => {
+    const center = await resolveCenter({
+      query: { lat: 47.2184, lon: -1.5536, positionSource: 'place' },
+      geocode: async () => {
+        throw new Error('ne doit pas être appelé')
+      }
+    })
+    expect(center).toEqual({ mode: 'place', lat: 47.2184, lon: -1.5536 })
+  })
+
+  it('resolveCenter : lat/lon + positionSource=device → mode geo (position de l’appareil)', async () => {
+    const center = await resolveCenter({
+      query: { lat: 48.86, lon: 2.34, positionSource: 'device' },
       geocode: async () => {
         throw new Error('ne doit pas être appelé')
       }
@@ -527,6 +567,36 @@ describe('API — orchestration (ticket 009, spec §8)', () => {
       const distA = haversineKm(center, stations[0]!.position)
       const distB = haversineKm(center, stations[1]!.position)
       expect(input.candidates[0]!.detourDistanceKm).toBeCloseTo(Math.max(0, distB - distA) * 2, 6)
+    } finally {
+      h.close()
+    }
+  })
+
+  // Ticket 031 : un lieu choisi fournit un centre exact, mais la recommandation
+  // doit rester aussi prudente qu'une recherche ville/CP — le détour reste une
+  // hypothèse, l'utilisateur n'est pas forcément à ce point.
+  it('buildRecommendationInput : mode place → hasGeoLocation false (le détour reste une hypothèse)', () => {
+    const h = createTestDb()
+    try {
+      const center = { mode: 'place' as const, lat: 48.861, lon: 2.341 }
+      const input = buildRecommendationInput({
+        fuelType: 'Gazole',
+        vehicle: {
+          fuel: 'Gazole',
+          consumption: 6,
+          tankCapacity: 60,
+          currentLevel: 20,
+          preferredQuantity: null,
+          savingsThreshold: 1
+        },
+        center,
+        stations: [
+          station('a', 'Gazole', { position: { lat: 48.861, lon: 2.341 } }),
+          station('b', 'Gazole', { position: { lat: 48.871, lon: 2.351 } })
+        ],
+        now: NOW
+      })
+      expect(input.hasGeoLocation).toBe(false)
     } finally {
       h.close()
     }

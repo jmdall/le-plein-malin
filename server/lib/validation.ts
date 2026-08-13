@@ -4,6 +4,7 @@
 // Aucune règle métier ici : uniquement la forme des requêtes.
 import { z } from 'zod'
 import { FUEL_TYPES } from '../../domain/fuel-prices/types'
+import { FRANCE_BOUNDS } from '../../shared/geo'
 
 // ——— Helpers de message d'erreur (Zod v4 : options `{ error }`) ———
 function numError(msg: string) {
@@ -11,16 +12,34 @@ function numError(msg: string) {
 }
 
 // Coordonnées bornées : territoire français métropolitain (CORINE) + marge
-// (spec §14 #14 : coordonnées hors France → rejetées).
+// (spec §14 #14 : coordonnées hors France → rejetées). Les bornes vivent dans
+// shared/geo.ts : le client les applique aussi, pour ne jamais envoyer une
+// coordonnée que cette validation refuserait (ticket 031).
+const { minLat, maxLat, minLon, maxLon } = FRANCE_BOUNDS
+const LAT_RANGE = `lat hors bornes (${minLat}..${maxLat})`
+const LON_RANGE = `lon hors bornes (${minLon}..${maxLon})`
+
 export const latSchema = z.coerce
   .number(numError('lat doit être un nombre'))
-  .min(41, { error: 'lat hors bornes (41..51.5)' })
-  .max(51.5, { error: 'lat hors bornes (41..51.5)' })
+  .min(minLat, { error: LAT_RANGE })
+  .max(maxLat, { error: LAT_RANGE })
 
 export const lonSchema = z.coerce
   .number(numError('lon doit être un nombre'))
-  .min(-5.5, { error: 'lon hors bornes (-5.5..9.8)' })
-  .max(9.8, { error: 'lon hors bornes (-5.5..9.8)' })
+  .min(minLon, { error: LON_RANGE })
+  .max(maxLon, { error: LON_RANGE })
+
+// ——— Provenance des coordonnées (ticket 031) ———
+// `device` : position de l'appareil (géolocalisation) — le détour est mesuré
+// depuis là où l'utilisateur se trouve vraiment.
+// `place`  : centroïde d'un lieu choisi dans l'autocomplete — le centre est
+// exact, mais l'utilisateur n'y est pas forcément : la recommandation doit
+// rester aussi prudente qu'une recherche ville/CP (hypothèse de détour
+// affichée, §13 #16). Défaut `device` : les appels existants ne changent pas.
+export const positionSourceSchema = z
+  .enum(['device', 'place'], { error: 'positionSource doit être device ou place' })
+  .optional()
+  .default('device')
 
 export const radiusSchema = z.coerce
   .number(numError('radius doit être un nombre'))
@@ -127,6 +146,7 @@ export const baseLocationSchema = z
     {
       lat: latSchema.optional(),
       lon: lonSchema.optional(),
+      positionSource: positionSourceSchema,
       radius: radiusSchema.optional().default(10),
       fuel: fuelSchema.optional().default('Gazole'),
       q: querySchema.optional(),
@@ -175,9 +195,15 @@ export const baseLocationSchema = z
 
 export type StationsQuery = z.infer<typeof baseLocationSchema>
 
-// Vue « carte » : le centre résolu (lat/lon direct, ou centroïde géocodé).
+// Vue « carte » : le centre résolu, et comment on l'a obtenu.
+//   geo   : position de l'appareil (géolocalisation) — seul mode qui vaut une
+//           géolocalisation pour la recommandation (hasGeoLocation).
+//   place : lieu choisi dans l'autocomplete, centre exact mais pas la position
+//           de l'utilisateur (ticket 031).
+//   query : centroïde géocodé côté serveur depuis une ville / un code postal.
 export type ResolvedCenter =
   | { mode: 'geo'; lat: number; lon: number }
+  | { mode: 'place'; lat: number; lon: number }
   | { mode: 'query'; label: string; lat: number; lon: number }
 
 // ——— Query /api/stations/:id/history (fuel optionnel) ———

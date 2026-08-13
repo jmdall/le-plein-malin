@@ -14,14 +14,22 @@ import type { StationsQuery, ResolvedCenter } from './validation'
 // par createGeocodeProvider. L'hypothèse « centroïde de la ville » est
 // explicite dans le label renvoyé (spec §4).
 export interface ResolveCenterInput {
-  query: Pick<StationsQuery, 'lat' | 'lon' | 'q' | 'city' | 'postalCode'>
+  query: Pick<StationsQuery, 'lat' | 'lon' | 'q' | 'city' | 'postalCode'> & {
+    positionSource?: 'device' | 'place'
+  }
   geocode: (input: string) => Promise<{ label: string; lat: number; lon: number }>
 }
 
 export async function resolveCenter(input: ResolveCenterInput): Promise<ResolvedCenter> {
   const { query, geocode } = input
   if (query.lat !== undefined && query.lon !== undefined) {
-    return { mode: 'geo', lat: query.lat, lon: query.lon }
+    // Ticket 031 : des coordonnées ne valent pas toutes une géolocalisation.
+    // Un lieu choisi dans l'autocomplete donne un centre exact sans dire où se
+    // trouve l'utilisateur — la recommandation doit garder son hypothèse de
+    // détour (§13 #16). Le mode distingue les deux ; le défaut reste `device`,
+    // donc la géolocalisation garde son comportement.
+    const mode = query.positionSource === 'place' ? 'place' : 'geo'
+    return { mode, lat: query.lat, lon: query.lon }
   }
   // Mode ville/CP : le centroïde est géocodé (spec §4, §8). q peut être une
   // ville OU un code postal ; city/postalCode sont explicites.

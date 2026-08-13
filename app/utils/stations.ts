@@ -64,6 +64,7 @@ export type StationsRequest = Omit<RecommendationRequest, 'vehicleProfile'>
 export function buildSearchParams(request: {
   lat?: number
   lon?: number
+  positionSource?: 'device' | 'place'
   q?: string
   city?: string
   postalCode?: string
@@ -74,6 +75,12 @@ export function buildSearchParams(request: {
   if (request.lat !== undefined && request.lon !== undefined) {
     params.set('lat', String(request.lat))
     params.set('lon', String(request.lon))
+    // Ticket 031 : seul `place` est transmis. Le défaut serveur est `device`,
+    // donc géolocalisation et déplacement de carte restent inchangés — et
+    // l'URL ne se charge pas d'un paramètre redondant.
+    if (request.positionSource === 'place') {
+      params.set('positionSource', 'place')
+    }
   } else if (request.postalCode) {
     params.set('postalCode', request.postalCode)
   } else if (request.city) {

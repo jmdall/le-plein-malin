@@ -2,21 +2,42 @@
 // recherche ville/adresse (ticket 025) : construction de l'URL api-adresse,
 // parsing GeoJSON, choix du label/ville/CP, repli sur la valeur saisie.
 // Aucune dépendance Nuxt/HTTP : tout est testable avec des objets simples.
+//
+// Ticket 031 : chaque suggestion porte aussi le centroïde renvoyé par le BAN
+// (`geometry.coordinates`), pour que la recherche parte du point choisi et non
+// d'un second géocodage serveur.
 import { describe, expect, it } from 'vitest'
 import {
   AUTOCOMPLETE_BASE_URL,
   AUTOCOMPLETE_LIMIT,
   buildAutocompleteUrl,
+  buildLocationSelection,
   buildSearchQuery,
   parseAutocompleteResponse
 } from '../../app/utils/autocomplete'
 import type { AutocompleteSuggestion } from '../../app/utils/autocomplete'
 
+// Suggestion complète, position incluse — base des cas de buildSearchQuery /
+// buildLocationSelection.
+function suggestion(overrides: Partial<AutocompleteSuggestion> = {}): AutocompleteSuggestion {
+  return {
+    label: 'Paris 75001',
+    city: 'Paris',
+    postalCode: '75001',
+    context: '75, Paris, Île-de-France',
+    position: { lat: 48.8566, lon: 2.3522 },
+    ...overrides
+  }
+}
+
 // ——— Fixture GeoJSON réaliste de https://api-adresse.data.gouv.fr/search ———
-function municipalityFeature(overrides: Record<string, unknown> = {}): unknown {
+function municipalityFeature(
+  overrides: Record<string, unknown> = {},
+  geometry: unknown = { type: 'Point', coordinates: [2.3522, 48.8566] }
+): unknown {
   return {
     type: 'Feature',
-    geometry: { type: 'Point', coordinates: [2.3522, 48.8566] },
+    geometry,
     properties: {
       label: 'Paris 75001',
       type: 'municipality',
@@ -63,8 +84,59 @@ describe('parseAutocompleteResponse (ticket 025)', () => {
       label: 'Paris 75001',
       city: 'Paris',
       postalCode: '75001',
-      context: '75, Paris, Île-de-France'
+      context: '75, Paris, Île-de-France',
+      position: { lat: 48.8566, lon: 2.3522 }
     })
+  })
+
+  // Ticket 031 : la géométrie GeoJSON est [lon, lat] — l'inversion est le
+  // piège classique et elle enverrait la recherche dans un autre pays.
+  it('lit la position dans l’ordre GeoJSON [lon, lat]', () => {
+    const json = featureCollection([
+      municipalityFeature({}, { type: 'Point', coordinates: [-1.5536, 47.2184] })
+    ])
+    const [parsed] = parseAutocompleteResponse(json, 'nantes')
+    expect(parsed?.position).toEqual({ lat: 47.2184, lon: -1.5536 })
+  })
+
+  it('position null quand la clé geometry est absente de la feature', () => {
+    const json = featureCollection([
+      { type: 'Feature', properties: { label: 'Paris 75001', city: 'Paris' } }
+    ])
+    const [parsed] = parseAutocompleteResponse(json, 'paris')
+    expect(parsed?.label).toBe('Paris 75001')
+    expect(parsed?.position).toBeNull()
+  })
+
+  it('position null quand la géométrie est malformée ou non numérique', () => {
+    const cases: unknown[] = [
+      null,
+      { type: 'Point' },
+      { type: 'Point', coordinates: [] },
+      { type: 'Point', coordinates: [2.3522] },
+      { type: 'Point', coordinates: ['2.3522', '48.8566'] },
+      { type: 'Point', coordinates: [null, 48.8566] }
+    ]
+    for (const geometry of cases) {
+      const json = featureCollection([municipalityFeature({}, geometry)])
+      const [parsed] = parseAutocompleteResponse(json, 'paris')
+      expect(parsed?.label).toBe('Paris 75001')
+      expect(parsed?.position, JSON.stringify(geometry)).toBeNull()
+    }
+  })
+
+  it('position null quand les coordonnées sortent des bornes terrestres', () => {
+    const outOfRange = [
+      [2.3522, 91],
+      [2.3522, -91],
+      [181, 48.8566],
+      [-181, 48.8566]
+    ]
+    for (const coordinates of outOfRange) {
+      const json = featureCollection([municipalityFeature({}, { type: 'Point', coordinates })])
+      const [parsed] = parseAutocompleteResponse(json, 'paris')
+      expect(parsed?.position, JSON.stringify(coordinates)).toBeNull()
+    }
   })
 
   it('parse une adresse complète (housenumber)', () => {
@@ -128,38 +200,71 @@ describe('parseAutocompleteResponse (ticket 025)', () => {
 
 describe('buildSearchQuery (ticket 025)', () => {
   it('ville + CP → la chaîne ville CP, la plus robuste pour le géocodage serveur', () => {
-    const suggestion: AutocompleteSuggestion = {
-      label: 'Paris 75001',
-      city: 'Paris',
-      postalCode: '75001',
-      context: '75, Paris, Île-de-France'
-    }
-    expect(buildSearchQuery(suggestion, 'paris')).toBe('Paris 75001')
+    expect(buildSearchQuery(suggestion(), 'paris')).toBe('Paris 75001')
   })
 
   it('ville seule → la ville', () => {
-    const suggestion: AutocompleteSuggestion = {
-      label: 'Lyon',
-      city: 'Lyon',
-      postalCode: '',
-      context: '69, Rhône, Auvergne-Rhône-Alpes'
-    }
-    expect(buildSearchQuery(suggestion, 'lyon')).toBe('Lyon')
+    expect(
+      buildSearchQuery(
+        suggestion({ label: 'Lyon', city: 'Lyon', postalCode: '', context: '69, Rhône' }),
+        'lyon'
+      )
+    ).toBe('Lyon')
   })
 
   it('adresse sans ville → le label complet', () => {
-    const suggestion: AutocompleteSuggestion = {
-      label: '2 Rue de Rivoli, 75004 Paris',
-      city: '',
-      postalCode: '75004',
-      context: ''
-    }
-    expect(buildSearchQuery(suggestion, 'rivoli')).toBe('2 Rue de Rivoli, 75004 Paris')
+    expect(
+      buildSearchQuery(
+        suggestion({ label: '2 Rue de Rivoli, 75004 Paris', city: '', postalCode: '75004' }),
+        'rivoli'
+      )
+    ).toBe('2 Rue de Rivoli, 75004 Paris')
   })
 
   it('repli sur la valeur saisie quand la suggestion ne porte rien d’utilisable', () => {
     expect(buildSearchQuery(null, 'paris 75')).toBe('paris 75')
-    const empty: AutocompleteSuggestion = { label: '', city: '', postalCode: '', context: '' }
+    const empty = suggestion({ label: '', city: '', postalCode: '', context: '' })
     expect(buildSearchQuery(empty, 'paris 75')).toBe('paris 75')
+  })
+})
+
+// ——— Ticket 031 : la sélection porte le texte ET le centre choisi ———
+describe('buildLocationSelection (ticket 031)', () => {
+  it('reprend exactement le texte de buildSearchQuery et y joint la position', () => {
+    const chosen = suggestion()
+    expect(buildLocationSelection(chosen, 'paris')).toEqual({
+      query: buildSearchQuery(chosen, 'paris'),
+      position: { lat: 48.8566, lon: 2.3522 }
+    })
+  })
+
+  it('position null quand la suggestion n’en porte pas : le serveur géocodera le texte', () => {
+    expect(buildLocationSelection(suggestion({ position: null }), 'paris')).toEqual({
+      query: 'Paris 75001',
+      position: null
+    })
+  })
+
+  it('sans suggestion (saisie libre), le texte brut part seul', () => {
+    expect(buildLocationSelection(null, '  paris 75  ')).toEqual({
+      query: '  paris 75  ',
+      position: null
+    })
+  })
+
+  it('une suggestion vide replie sur la saisie, sans position inventée', () => {
+    const empty = suggestion({ label: '', city: '', postalCode: '', position: null })
+    expect(buildLocationSelection(empty, 'paris 75')).toEqual({
+      query: 'paris 75',
+      position: null
+    })
+  })
+
+  // Le texte reste utilisable même quand la position est connue : il sert au
+  // libellé « Recherche autour de … » et à la mémorisation locale (LOC-2).
+  it('le texte est toujours fourni, même avec une position', () => {
+    const result = buildLocationSelection(suggestion(), 'par')
+    expect(result.query).not.toBe('')
+    expect(result.position).not.toBeNull()
   })
 })

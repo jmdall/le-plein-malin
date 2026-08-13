@@ -70,6 +70,11 @@ export type LocationMode = 'geo' | 'query'
 export interface RecommendationRequest {
   lat?: number
   lon?: number
+  // Provenance de lat/lon (ticket 031). `device` = position de l'appareil ;
+  // `place` = centroïde d'un lieu choisi dans l'autocomplete. Le serveur en a
+  // besoin pour savoir s'il peut retirer l'hypothèse de détour (§13 #16).
+  // Absent ⇒ `device` côté serveur : les appels existants ne changent pas.
+  positionSource?: 'device' | 'place'
   q?: string
   city?: string
   postalCode?: string

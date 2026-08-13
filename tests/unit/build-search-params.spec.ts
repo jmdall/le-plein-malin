@@ -12,6 +12,7 @@ function params(request: {
   q?: string
   city?: string
   postalCode?: string
+  positionSource?: 'device' | 'place'
   radius: number
   fuel: 'SP95' | 'SP95-E10' | 'SP98' | 'E85' | 'Gazole' | 'GPLc'
 }): Record<string, string> {
@@ -52,6 +53,43 @@ describe('buildSearchParams (ticket 029)', () => {
   it('q → param q en dernier recours', () => {
     const p = params({ q: 'Paris 8', radius: 10, fuel: 'Gazole' })
     expect(p).toEqual({ q: 'Paris 8', radius: '10', fuel: 'Gazole' })
+  })
+
+  // ——— Ticket 031 : provenance des coordonnées ———
+  // Un lieu choisi dans l'autocomplete donne un centre exact, mais ce n'est pas
+  // la position de l'appareil : le serveur doit pouvoir garder l'hypothèse de
+  // détour. Le défaut (device) laisse la géolocalisation et le déplacement de
+  // carte inchangés, donc le paramètre n'est émis que pour « place ».
+  it('positionSource=place → param transmis avec lat/lon (ticket 031)', () => {
+    const p = params({
+      lat: 47.2184,
+      lon: -1.5536,
+      positionSource: 'place',
+      radius: 10,
+      fuel: 'Gazole'
+    })
+    expect(p).toEqual({
+      lat: '47.2184',
+      lon: '-1.5536',
+      positionSource: 'place',
+      radius: '10',
+      fuel: 'Gazole'
+    })
+  })
+
+  it('positionSource=device (ou absent) → aucun param : le défaut serveur suffit', () => {
+    expect(
+      params({ lat: 48.86, lon: 2.34, positionSource: 'device', radius: 10, fuel: 'Gazole' })
+        .positionSource
+    ).toBeUndefined()
+    expect(params({ lat: 48.86, lon: 2.34, radius: 10, fuel: 'Gazole' }).positionSource)
+      .toBeUndefined()
+  })
+
+  it('positionSource sans lat/lon → jamais transmis (le centre vient du texte)', () => {
+    expect(
+      params({ q: 'Nantes', positionSource: 'place', radius: 10, fuel: 'Gazole' }).positionSource
+    ).toBeUndefined()
   })
 
   it('fuel converti via fuelToApi (Gazole → Gazole, SP95-E10 → E10)', () => {

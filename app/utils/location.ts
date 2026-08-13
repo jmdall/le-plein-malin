@@ -3,7 +3,9 @@
 // (LOC-1) et le dernier lieu de recherche (LOC-2) sont mémorisés localement.
 // La position précise n'est jamais persistée (LOC-4, NFR-SEC-4) : on ne garde
 // que le consentement et la ville/CP saisie.
+import { isSearchablePosition } from '../../shared/geo'
 import { storageGet, storageSet, storageRemove, STORAGE_KEYS } from './storage'
+import type { RecommendationRequest } from './recommendation'
 
 export interface GeoPosition {
   lat: number
@@ -39,6 +41,59 @@ export function saveLocation(query: LocationQuery): void {
 
 export function clearSavedLocation(): void {
   storageRemove(STORAGE_KEYS.location)
+}
+
+// ——— Décision de recherche ville / CP / adresse (ticket 031) ———
+// Fonction PURE : elle décide ce qui part vers l'API et ce qui est mémorisé,
+// sans toucher au stockage ni au réseau. Extraite de pages/index.vue pour être
+// testable — c'est la règle qui corrige le double géocodage.
+//
+// Priorité : une position explicitement choisie dans l'autocomplete gagne
+// toujours. Elle part SEULE (sans q ni postalCode) : le serveur géocoderait
+// sinon le texte une deuxième fois, avec un autre fournisseur et donc un autre
+// centre — la station de référence ne serait plus celle du point choisi.
+//
+// Deux replis sur le texte, tous deux vers le comportement d'origine
+// (5 chiffres → postalCode, sinon q) :
+//   - aucune position (saisie libre, rejeu de la dernière recherche) ;
+//   - position hors des bornes acceptées par l'API (shared/geo.ts). Le BAN
+//     couvre l'outre-mer, l'API non : envoyer ces coordonnées transformerait
+//     une recherche qui marchait en erreur 400.
+export type SearchTarget = Pick<RecommendationRequest, 'lat' | 'lon' | 'positionSource'> &
+  Pick<RecommendationRequest, 'postalCode' | 'q'>
+
+export interface ResolvedSearch {
+  // Libellé affiché (« Recherche autour de … ») : le texte, jamais des
+  // coordonnées.
+  label: string
+  target: SearchTarget
+  // Ce qui est mémorisé localement. Aucune coordonnée n'y figure jamais
+  // (LOC-4, NFR-SEC-4) : le rejeu au montage repasse par le géocodage serveur.
+  saved: LocationQuery
+}
+
+const POSTAL_CODE_RE = /^\d{5}$/
+
+export function resolveSearchInput(
+  input: string,
+  position: GeoPosition | null
+): ResolvedSearch | null {
+  const label = input.trim()
+  if (label === '') return null
+
+  const isPostal = POSTAL_CODE_RE.test(label)
+  const saved: LocationQuery = { source: isPostal ? 'postalCode' : 'city', q: label }
+
+  if (isSearchablePosition(position)) {
+    // `place` : centre exact, mais ce n'est pas la position de l'utilisateur —
+    // le serveur garde son hypothèse de détour (§13 #16).
+    return {
+      label,
+      target: { lat: position.lat, lon: position.lon, positionSource: 'place' },
+      saved
+    }
+  }
+  return { label, target: isPostal ? { postalCode: label } : { q: label }, saved }
 }
 
 // ——— Géolocalisation (LOC-1, LOC-4) ———

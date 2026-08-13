@@ -15,8 +15,9 @@ import { usePreferences, RADIUS_OPTIONS } from '../composables/usePreferences'
 import { useGeolocation } from '../composables/useGeolocation'
 import { useFuelRecommendation } from '../composables/useFuelRecommendation'
 import { useStations } from '../composables/useStations'
-import { saveLocation } from '../utils/location'
+import { resolveSearchInput, saveLocation } from '../utils/location'
 import { OSM_ATTRIBUTION_NOTE } from '../utils/stationIdentity'
+import type { LocationSelection } from '../utils/autocomplete'
 import type { RecommendationRequest } from '../utils/recommendation'
 import type { StationsRequest } from '../utils/stations'
 
@@ -65,11 +66,14 @@ async function run(
   }
   appliedLocation.value = { label, mode }
   await reco.refresh(request)
+  // `positionSource` doit suivre : sinon /api/stations et /api/recommendation
+  // résoudraient le même centre avec deux provenances différentes (ticket 031).
   stationsRequest.value = {
     radius: request.radius,
     fuel: request.fuel,
     lat: request.lat,
     lon: request.lon,
+    positionSource: request.positionSource,
     q: request.q,
     city: request.city,
     postalCode: request.postalCode
@@ -155,29 +159,31 @@ async function locate() {
   }
 }
 
-// ——— Recherche ville / code postal (LOC-2) ———
-function searchByQuery(q: string) {
-  const raw = q.trim()
-  if (raw.length === 0) {
+// ——— Recherche ville / code postal / adresse (LOC-2) ———
+// Contrat @search de LocationSearch : `position` est fournie quand
+// l'utilisateur a choisi une suggestion de l'autocomplete — elle porte le
+// centroïde BAN de CE lieu (ticket 031). Elle part alors seule vers l'API, sans
+// texte : sinon le serveur géocoderait le même lieu une deuxième fois avec un
+// autre fournisseur, et la station de référence ne serait plus celle du point
+// choisi. Toute la décision vit dans `resolveSearchInput` (module pur, testé).
+function searchByQuery(selection: LocationSelection) {
+  const resolved = resolveSearchInput(selection.query, selection.position)
+  if (!resolved) {
     return
   }
-  const isPostal = /^\d{5}$/.test(raw)
   const payload: RecommendationRequest = {
     radius: prefs.radius.value,
-    fuel: prefs.fuel.value
+    fuel: prefs.fuel.value,
+    ...resolved.target
   }
-  if (isPostal) {
-    payload.postalCode = raw
-  } else {
-    payload.q = raw
-  }
-  geo.setSavedQuery({ source: isPostal ? 'postalCode' : 'city', q: raw })
-  saveLocation({ source: isPostal ? 'postalCode' : 'city', q: raw })
+  geo.setSavedQuery(resolved.saved)
+  saveLocation(resolved.saved)
   searchMessage.value = null
   // Recherche ville/CP : ordre explicite de récentrer une fois les stations
-  // de cette recherche arrivées (le centre géocodé vient dans la réponse).
+  // de cette recherche arrivées (l'API renvoie le centre retenu — le nôtre
+  // quand lat/lon sont fournis, le centroïde géocodé sinon).
   explicitRecenterPending = true
-  run(payload, raw, 'query')
+  run(payload, resolved.label, 'query')
 }
 
 // ——— Rejeu de la dernière recherche ville/CP au retour sur la page (spec §14 :
@@ -195,7 +201,8 @@ onMounted(() => {
   }
   const saved = geo.savedQuery.value
   if (saved && saved.q) {
-    searchByQuery(saved.q)
+    // Rejeu : seul le texte est mémorisé (LOC-4) → géocodage serveur.
+    searchByQuery({ query: saved.q, position: null })
   }
 })
 
@@ -203,10 +210,6 @@ onBeforeUnmount(() => {
   mobileMq?.removeEventListener('change', syncIsMobile)
   mobileMq = null
 })
-
-function searchNow(query: string) {
-  searchByQuery(query)
-}
 
 function retry() {
   if (reco.lastSearch.value) {
@@ -432,7 +435,7 @@ const bottomOverlaysHidden = computed(() => isMobile.value && sheetState.value =
 
     <!-- Overlay haut : recherche + carburant -->
     <div class="map-overlay map-overlay-top">
-      <LocationSearch class="map-search" @search="searchNow" />
+      <LocationSearch class="map-search" @search="searchByQuery" />
       <!-- FuelSelector rendu uniquement côté client après chargement de la
            préférence (CAR-2) : évite le mismatch SSR/hydratation où Gazole
            (défaut SSR) et le carburant mémorisé semblaient actifs ensemble. -->

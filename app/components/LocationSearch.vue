@@ -3,25 +3,37 @@
 // 010, LOC-2 ; écran carte plein viewport, docs/design/ui-reference.md §1 :
 // pilule blanche, ombre --shadow-md, icône loupe à gauche). Le formulaire
 // déclenche une recherche sans géolocalisation ; la ville/CP est mémorisée
-// localement côté page. Contrat @search inchangé.
+// localement côté page.
 //
 // Ticket 025 : suggestions de villes/adresses à la frappe (api-adresse de
 // data.gouv.fr, docs/research/pouvoirachatplus-carte.md §5-6). Seul le texte
-// saisi est transmis, jamais de position précise (LOC-4). Débounce 250 ms,
+// saisi part vers le BAN — jamais la position de l'utilisateur (LOC-4) ; le
+// centroïde renvoyé POUR une suggestion choisie est en revanche conservé et
+// transmis à la page (ticket 031). Débounce 250 ms,
 // min 3 caractères, AbortController (une seule requête en vol, la plus
 // récente gagne), rôle listbox/option, navigation clavier, fermeture au clic
 // extérieur. Les suggestions sont un AMÉLIORATION PROGRESSIVE : sans JS, le
 // formulaire continue de fonctionner (submit → @search).
+//
+// Ticket 031 : @search transmet désormais une LocationSelection (texte +
+// centre choisi) et non plus une simple chaîne. Une suggestion choisie porte
+// son centroïde BAN, ce qui évite un second géocodage serveur sur un autre
+// fournisseur. Un submit texte libre émet `position: null` — parcours
+// inchangé.
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { buildAutocompleteUrl, buildSearchQuery, parseAutocompleteResponse } from '../utils/autocomplete'
-import type { AutocompleteSuggestion } from '../utils/autocomplete'
+import {
+  buildAutocompleteUrl,
+  buildLocationSelection,
+  parseAutocompleteResponse
+} from '../utils/autocomplete'
+import type { AutocompleteSuggestion, LocationSelection } from '../utils/autocomplete'
 
 defineProps<{
   placeholder?: string
 }>()
 
 const emit = defineEmits<{
-  search: [query: string]
+  search: [selection: LocationSelection]
 }>()
 
 const value = ref('')
@@ -124,16 +136,16 @@ onBeforeUnmount(() => {
 })
 
 // ——— Sélection ———
-// Après sélection, le champ est vidé et la liste fermée (ticket 025). Le
-// contrat @search existant de la page est inchangé : la recherche est lancée
-// avec la valeur la plus robuste pour le géocodage serveur.
+// Après sélection, le champ est vidé et la liste fermée (ticket 025). La
+// recherche part avec le centre exact de la suggestion quand le BAN l'a fourni
+// (ticket 031), et avec le texte robuste dans tous les cas.
 function selectSuggestion(index: number) {
   const suggestion = suggestions.value[index]
   if (!suggestion) return
-  const query = buildSearchQuery(suggestion, value.value)
+  const selection = buildLocationSelection(suggestion, value.value)
   value.value = ''
   closeSuggestions()
-  emit('search', query)
+  emit('search', selection)
 }
 
 function closeSuggestions() {
@@ -147,13 +159,15 @@ function closeSuggestions() {
   selectedIndex.value = -1
 }
 
+// Submit texte libre : aucune suggestion choisie, donc aucun centre connu —
+// c'est le serveur qui géocode (position: null).
 function submit() {
   const query = value.value.trim()
   if (query.length === 0) {
     return
   }
   closeSuggestions()
-  emit('search', query)
+  emit('search', { query, position: null })
 }
 
 const listId = 'location-autocomplete'
